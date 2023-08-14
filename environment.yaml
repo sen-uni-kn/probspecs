@@ -1,0 +1,20 @@
+name: prob-specs
+channels:
+  - pytorch
+dependencies:
+  - python=3.10
+  - pytorch=1.12.1
+  - torchvision=0.13.1
+  - cudatoolkit=11.3
+  - numpy=1.25.*
+  - packaging=20.*
+  - pytest=7.4.*
+  - pylint=2.16.*
+  - appdirs=1.4.*
+  - pyyaml=6.*
+  - ninja=1.10.*
+  - tqdm=4.65.*
+  - pip
+  - pip:
+    - pytest-order>=1.1.0,<1.2.0
+
