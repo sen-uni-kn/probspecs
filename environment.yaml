@@ -17,4 +17,4 @@ dependencies:
   - pip
   - pip:
     - pytest-order>=1.1.0,<1.2.0
-
+    - adult-dataset>=1.0.0,2.0
