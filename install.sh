@@ -9,7 +9,5 @@ conda activate prob-specs
 git submodule update --init
 cd auto_LiRPA
 python setup.py install
-# Install CUDA extensions, currently not working
-# python auto_LiRPA/cuda_utils.py install
 cd ..
 
