@@ -2,3 +2,4 @@
 # Licensed under the MIT license
 
 from .formula import *
+from .trinary_logic import TrinaryLogic

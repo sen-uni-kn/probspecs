@@ -6,6 +6,7 @@ from pytest import approx
 import torch
 
 from probspecs import *
+from probspecs import TrinaryLogic as TL
 
 
 def test_construct_formula_1():
@@ -97,6 +98,65 @@ def test_replace_2():
     assert formula_2()
     formula_3 = formula_3.replace(subst)
     assert formula_3()
+
+
+def test_propagate_bounds_1():
+    x = ExternalVariable("x")
+    y = ExternalVariable("y")
+
+    assert x.propagate_bounds(x=(-1.0, 1.0)) == (-1.0, 1.0)
+    y_lb = torch.tensor([-1.0, 0.0, 1.0])
+    y_ub = torch.tensor([1.0, 0.0, 2.0])
+    assert y.propagate_bounds(y=(y_lb, y_ub)) == (y_lb, y_ub)
+
+    ineq1 = x >= y
+    ineq2 = x < y
+
+    x_lb = torch.tensor([1.5, -1.0, 0.5])
+    x_ub = torch.tensor([2.0, -0.5, 1.5])
+    ineq1_res = ineq1.propagate_bounds(x=(x_lb, x_ub), y=(y_lb, y_ub))
+    assert ineq1_res[0] == TL.TRUE
+    assert ineq1_res[1] == TL.FALSE
+    assert ineq1_res[2] == TL.UNKNOWN
+    ineq2_res = ineq2.propagate_bounds(x=(x_lb, x_ub), y=(y_lb, y_ub))
+    assert ineq2_res[0] == TL.FALSE
+    assert ineq2_res[1] == TL.TRUE
+    assert ineq2_res[2] == TL.UNKNOWN
+
+    formula = ineq1 | ineq2
+    formula_res = formula.propagate_bounds(x=(x_lb, x_ub), y=(y_lb, y_ub))
+    assert formula_res[0] == TL.TRUE
+    assert formula_res[1] == TL.TRUE
+    assert formula_res[2] == TL.UNKNOWN
+
+
+def test_propagate_bounds_2():
+    x = ExternalVariable("x")
+    y = ExternalVariable("y")
+    z = x*x + 7 * (x*y) - y/(2*x - 1)
+
+    torch.manual_seed(556917027411149)
+
+    def random_bounds():
+        mid = 200 * torch.rand(10) - 100
+        dev = 100 * torch.rand(10)
+        return mid - dev, mid + dev
+
+    for _ in range(10):
+        x_lb, x_ub = random_bounds()
+        y_lb, y_ub = random_bounds()
+        z_lb, z_ub = z.propagate_bounds(x=(x_lb, x_ub), y=(y_lb, y_ub))
+
+        x_values = x_lb + (x_ub - x_lb) * torch.rand(100, 10)
+        y_values = y_lb + (y_ub - y_lb) * torch.rand(100, 10)
+        if torch.any(x_lb > x_values) or torch.any(x_ub < x_values):
+            raise ValueError()
+        if torch.any(y_lb > y_values) or torch.any(y_ub < y_values):
+            raise ValueError()
+
+        z_values = z(x=x_values, y=y_values)
+        assert torch.all(z_lb <= z_values)
+        assert torch.all(z_ub >= z_values)
 
 
 if __name__ == "__main__":

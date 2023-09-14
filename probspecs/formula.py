@@ -11,7 +11,6 @@ from typing import Union
 
 import numpy as np
 import torch
-from frozendict import frozendict
 
 from .trinary_logic import TrinaryLogic as TL
 from .utils import contains_unbracketed
@@ -98,7 +97,7 @@ class Formula:
         return eval_op(operands_eval)
 
     def propagate_bounds(
-        self, **bounds: dict[str, tuple[torch.Tensor | float, torch.Tensor | float]]
+        self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
     ) -> np.ndarray[tuple, TL] | TL:
         """
         Propagates bounds on external variables and external function through
@@ -229,7 +228,7 @@ class Inequality:
         return eval_op(lhs_eval, rhs_eval)
 
     def propagate_bounds(
-        self, **bounds: dict[str, tuple[torch.Tensor | float, torch.Tensor | float]]
+        self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
     ) -> np.ndarray[tuple, TL] | TL:
         """
         Propagates bounds on external variables and external function through
@@ -245,12 +244,12 @@ class Inequality:
         lhs_lb, lhs_ub = self.lhs.propagate_bounds(**bounds)
         rhs_lb, rhs_ub = self.rhs.propagate_bounds(**bounds)
 
-        if self.op in (self.Operator.GREATHER_EQUAL, self.Operator.GREATHER_THAN):
+        if self.op in (self.Operator.GREATER_EQUAL, self.Operator.GREATER_THAN):
             # turn >= into <= by switching the sides of the inequality.
             lhs_lb, rhs_lb = rhs_lb, lhs_lb
             lhs_ub, rhs_ub = rhs_ub, lhs_ub
 
-        if self.op in (self.Operator.LESS_THAN, self.Operator.GREATHER_THAN):
+        if self.op in (self.Operator.LESS_THAN, self.Operator.GREATER_THAN):
             compare = ops.lt
             anti = ops.ge
         else:
@@ -352,7 +351,7 @@ class Expression:
         return eval_op(args_eval)
 
     def propagate_bounds(
-        self, **bounds: dict[str, tuple[torch.Tensor | float, torch.Tensor | float]]
+        self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
     ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
         """
         Propagates bounds on external variables and external function through
@@ -363,7 +362,7 @@ class Expression:
         :return: The lower bound and the upper bound of this expression
          derived from the bounds.
         """
-        arg_bounds = (arg.propagate_bounds(**bounds) for arg in self.args)
+        arg_bounds = [arg.propagate_bounds(**bounds) for arg in self.args]
         arg_lbs, arg_ubs = zip(*arg_bounds)
         match self.op:
             case self.Operator.ADD:
@@ -381,12 +380,12 @@ class Expression:
                 lb = reduce(  # if min(multiplied) only worked for tensors
                     torch.minimum,
                     multiplied,
-                    initial=torch.full_like(multiplied[0], torch.inf),
+                    torch.full_like(multiplied[0], torch.inf, dtype=torch.float),
                 )
                 ub = reduce(
                     torch.maximum,
                     multiplied,
-                    initial=torch.full_like(multiplied[0], -torch.inf),
+                    torch.full_like(multiplied[0], -torch.inf, dtype=torch.float),
                 )
                 return lb, ub
             case self.Operator.DIVIDE:
@@ -551,7 +550,7 @@ class Function(ABC):
         raise NotImplementedError()
 
     def propagate_bounds(
-        self, **bounds: dict[str, tuple[torch.Tensor | float, torch.Tensor | float]]
+        self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
     ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
         """
         Propagates bounds on external variables and external function through
@@ -655,7 +654,7 @@ class Constant(Function):
     val: torch.Tensor | float
 
     def __call__(
-        self, precomputed_values: PRECOMPUTED = frozendict(), **kwargs
+        self, **kwargs
     ) -> torch.Tensor | float:
         """
         Returns the value of this constant.
@@ -667,7 +666,7 @@ class Constant(Function):
         return self.val
 
     def propagate_bounds(
-        self, **bounds: dict[str, tuple[torch.Tensor | float, torch.Tensor | float]]
+        self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
     ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
         return self.val, self.val
 
@@ -706,7 +705,7 @@ class ElementAccess(Function):
         return source_val[self.target_index]
 
     def propagate_bounds(
-        self, **bounds: dict[str, tuple[torch.Tensor | float, torch.Tensor | float]]
+        self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
     ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
         source_lb, source_ub = self.source(**bounds)
         return source_lb[self.target_index], source_ub[self.target_index]
@@ -757,7 +756,7 @@ class Probability(Function):
         return subject_vals.float().mean()
 
     def propagate_bounds(
-        self, **bounds: dict[str, tuple[torch.Tensor | float, torch.Tensor | float]]
+        self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
     ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
         raise NotImplementedError()
 
@@ -815,12 +814,12 @@ class ExternalVariable(Function):
     name: str
 
     def __call__(
-        self, precomputed_values: PRECOMPUTED = frozendict(), **kwargs
+        self, **kwargs
     ) -> torch.Tensor | float:
         return kwargs[self.name]
 
     def propagate_bounds(
-        self, **bounds: dict[str, tuple[torch.Tensor | float, torch.Tensor | float]]
+        self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
     ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
         return bounds[self.name]
 
@@ -858,7 +857,7 @@ class ExternalFunction(Function):
         return func(*func_args)
 
     def propagate_bounds(
-        self, **bounds: dict[str, tuple[torch.Tensor | float, torch.Tensor | float]]
+        self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
     ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
         """
         Tries to retrieve

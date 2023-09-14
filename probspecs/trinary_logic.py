@@ -11,9 +11,14 @@ class TrinaryLogic(Enum):
     FALSE = auto()
     UNKNOWN = auto()
 
+    @staticmethod
+    def from_bool(value: bool):
+        return TrinaryLogic.TRUE if value else TrinaryLogic.FALSE
+
+    @staticmethod
     @np.vectorize
-    def not_(self):
-        match self:
+    def not_(value):
+        match value:
             case TrinaryLogic.TRUE:
                 return TrinaryLogic.FALSE
             case TrinaryLogic.FALSE:
@@ -21,18 +26,26 @@ class TrinaryLogic(Enum):
             case TrinaryLogic.UNKNOWN:
                 return TrinaryLogic.UNKNOWN
 
+    @staticmethod
     @np.vectorize
-    def and_(self, *others):
-        values = (self, *others)
+    def and_(*values):
         if any(x is TrinaryLogic.UNKNOWN for x in values):
             return TrinaryLogic.UNKNOWN
         else:
-            return all(x is TrinaryLogic.TRUE for x in values)
+            return TrinaryLogic.from_bool(all(x is TrinaryLogic.TRUE for x in values))
 
+    @staticmethod
     @np.vectorize
-    def or_(self, *others):
-        values = (self, *others)
+    def or_(*values):
         if all(x is TrinaryLogic.UNKNOWN for x in values):
             return TrinaryLogic.UNKNOWN
         else:
-            return any(x is TrinaryLogic.TRUE for x in values)
+            return TrinaryLogic.from_bool(any(x is TrinaryLogic.TRUE for x in values))
+
+    def __eq__(self, other):
+        if isinstance(other, TrinaryLogic):
+            return self.value == other.value
+        elif isinstance(other, bool):
+            return self == TrinaryLogic.from_bool(other)
+        else:
+            return NotImplemented
