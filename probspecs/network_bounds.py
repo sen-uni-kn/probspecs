@@ -134,13 +134,15 @@ def refine_bounds(
 
         split_in_bounds = split_in_bounds.reshape(-1, 2, *branch_in_bounds.shape[2:])
         branch_in_bounds = torch.vstack([in_bounds_not_selected, split_in_bounds])
-        branch_out_bounds = torch.vstack(
-            [out_bounds_not_selected, torch.stack([new_lbs, new_ubs]).unsqueeze(0)]
+        # bring into format: batch dim, lb/ub, dim, output dim
+        new_out_bounds = torch.stack([new_lbs, new_ubs]).permute(
+            1, 0, *range(2, branch_out_bounds.ndim)
         )
+        branch_out_bounds = torch.vstack([out_bounds_not_selected, new_out_bounds])
 
         # 6. update best upper/lower bound
-        best_lb = torch.amax(branch_out_bounds.index_select(1, 0), dim=0)
-        best_ub = torch.amax(branch_out_bounds.index_select(1, 1), dim=0)
+        best_lb = torch.amin(branch_out_bounds.index_select(1, torch.tensor(0)), dim=0)
+        best_ub = torch.amax(branch_out_bounds.index_select(1, torch.tensor(1)), dim=0)
         yield (best_lb, best_ub)
 
 
@@ -178,7 +180,7 @@ def split_ibp(
     split_in_bounds = torch.stack(split)  # shape: ndim, 2, N, 2, M
     # merge batch dim and splits dim
     split_batch = split_in_bounds.reshape(
-        split_in_bounds[0] * 2 * split_in_bounds[2], 2, -1
+        split_in_bounds.shape[0] * 2 * split_in_bounds.shape[2], 2, -1
     )
     in_lb_actual_shape = split_batch[:, 0, :].reshape(-1, *input_shape)
     in_ub_actual_shape = split_batch[:, 1, :].reshape(-1, *input_shape)
@@ -186,16 +188,18 @@ def split_ibp(
     out_lbs, out_ubs = network.compute_bounds(x=(bounded_tensor,), method="IBP")
     # recreate split dims and batch dim
     out_lbs = out_lbs.reshape(
-        split_in_bounds[0], 2, split_in_bounds[1], *out_lbs.shape[1:]
+        split_in_bounds.shape[0], 2, split_in_bounds.shape[2], *out_lbs.shape[1:]
     )
     out_ubs = out_ubs.reshape(
-        split_in_bounds[0], 2, split_in_bounds[1], *out_ubs.shape[1:]
+        split_in_bounds.shape[0], 2, split_in_bounds.shape[2], *out_ubs.shape[1:]
     )
     smaller_out_lb = torch.amin(out_lbs, dim=1)
     larger_out_ub = torch.amax(out_ubs, dim=1)
     out_lb_improve = smaller_out_lb - curr_best_out_lb
     out_ub_improve = curr_best_out_ub - larger_out_ub
     larger_improve = torch.maximum(out_lb_improve, out_ub_improve)
+    # remove the network output dim
+    larger_improve = torch.amax(larger_improve.flatten(start_dim=2), dim=2)
     split_dims = torch.argmax(larger_improve, dim=0)
     return split_dims
 
