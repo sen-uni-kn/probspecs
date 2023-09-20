@@ -8,7 +8,7 @@ from torch import nn
 from auto_LiRPA import BoundedModule, BoundedTensor, PerturbationLpNorm
 
 
-def refine_bounds(
+def network_bounds(
     network: nn.Module,
     input_bounds: tuple[torch.Tensor, torch.Tensor],
     batch_size: int = 128,
@@ -24,7 +24,7 @@ def refine_bounds(
     produces improve, meaning that the lower bound increases while the upper
     bound decreases.
 
-    To refine the previously computed bounds, :code:`refine_bounds` performs
+    To refine the previously computed bounds, :code:`network_bounds` performs
     branch and bound with input splitting.
 
     :param network: The network for which to compute bounds.

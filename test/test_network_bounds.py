@@ -5,7 +5,7 @@ from typing import Literal
 import torch
 from torch import nn
 
-from probspecs.network_bounds import refine_bounds
+from probspecs.bounds.network_bounds import network_bounds
 
 import pytest
 
@@ -21,7 +21,7 @@ def test_refine_bounds(split_heuristic: Literal["longest-edge", "IBP"]):
     test_inputs = torch.rand((100, 10))
     test_outputs = net(test_inputs)
 
-    bounds_gen = refine_bounds(
+    bounds_gen = network_bounds(
         net, (in_lb, in_ub), batch_size=256, split_heuristic=split_heuristic
     )
     best_lb = -torch.inf
