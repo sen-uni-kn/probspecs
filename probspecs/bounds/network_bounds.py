@@ -2,20 +2,18 @@
 # Licensed under the MIT license
 from typing import Generator, Literal
 
-from frozendict import frozendict
 import torch
 from torch import nn
 from auto_LiRPA import BoundedModule, BoundedTensor, PerturbationLpNorm
+
+from .auto_lirpa_params import AutoLiRPAParams
 
 
 def network_bounds(
     network: nn.Module,
     input_bounds: tuple[torch.Tensor, torch.Tensor],
     batch_size: int = 128,
-    auto_lirpa_method: str = "alpha-CROWN",
-    auto_lirpa_bound_ops=frozendict(
-        {"optimize_bound_args": frozendict({"iteration": 20, "lr_alpha": 0.1})}
-    ),
+    auto_lirpa_params: AutoLiRPAParams = AutoLiRPAParams(),
     split_heuristic: Literal["IBP", "longest-edge"] = "IBP",
 ) -> Generator[tuple[torch.Tensor, torch.Tensor], None, None]:
     """
@@ -31,22 +29,18 @@ def network_bounds(
     :param input_bounds: A lower and an upper bound on the network input.
      The bounds may not have batch dimensions.
     :param batch_size: The number of branches to consider at a time.
-    :param auto_lirpa_method: The :code:`auto_LiRPA` bound propagation method
-     to use for computing bounds.
-     More details in the :func:`auto_LiRPA.BoundedModule.compute_bounds` documentation.
-    :param auto_lirpa_bound_ops: :code:`auto_LiRPA` bound propagation options.
-     More details in the :func:`auto_LiRPA.BoundedModule` documentation.
+    :param auto_lirpa_params: Parameters for running auto_LiRPA.
     :param split_heuristic: Which heuristic to use for selecting dimensions to split.
     :return: A generator that yields improving lower and upper bounds.
     """
     initial_in_lb, initial_in_ub = input_bounds
     initial_in_lb = initial_in_lb.unsqueeze(0)
     initial_in_ub = initial_in_ub.unsqueeze(0)
-    network = BoundedModule(network, initial_in_lb, auto_lirpa_bound_ops)
+    network = BoundedModule(network, initial_in_lb, auto_lirpa_params.bound_ops)
     bounded_tensor = construct_bounded_tensor(initial_in_lb, initial_in_ub)
 
     best_lb, best_ub = network.compute_bounds(
-        x=(bounded_tensor,), method=auto_lirpa_method
+        x=(bounded_tensor,), method=auto_lirpa_params.method
     )
     yield (best_lb, best_ub)
 
@@ -122,7 +116,7 @@ def network_bounds(
         # 4. compute bounds
         bounded_tensor = construct_bounded_tensor(split_in_lbs, split_in_ubs)
         new_lbs, new_ubs = network.compute_bounds(
-            x=(bounded_tensor,), method=auto_lirpa_method
+            x=(bounded_tensor,), method=auto_lirpa_params.method
         )
 
         # 5. update branches

@@ -75,24 +75,6 @@ def verify(
      that allows to prove/disprove :code:`formula`.
     """
 
-    def collect_requires_bounds(
-        obj: Formula | Inequality | Expression | Function,
-    ) -> tuple[Function, ...]:
-        match obj:
-            case Formula(_, children) | Expression(_, children):
-                return sum(
-                    (collect_requires_bounds(child) for child in children),
-                    start=(),
-                )
-            case Inequality():
-                lhs_result = collect_requires_bounds(obj.lhs)
-                rhs_result = collect_requires_bounds(obj.rhs)
-                return lhs_result + rhs_result
-            case ElementAccess():
-                return collect_requires_bounds(obj.source)
-            case Probability() | ExternalFunction() | ExternalVariable():
-                return (obj,)
-
     requires_bounds = collect_requires_bounds(formula)
     bounded_terms_substitution = {
         term: ExternalVariable(str(term)) for term in requires_bounds
@@ -105,7 +87,7 @@ def verify(
         for i, worker_device in enumerate(workers):
             worker = mp.Process(
                 target=_compute_bounds_worker,
-                args=requires_bounds[i*terms_per_worker:(i+1)*terms_per_worker],
+                args=requires_bounds[i * terms_per_worker : (i + 1) * terms_per_worker],
                 kwargs={
                     "externals": externals,
                     "external_vars_bounds": external_vars_bounds,
@@ -158,3 +140,28 @@ def _compute_bounds_worker(
     :param device: Which device to use for computing bounds.
     """
     pass
+
+
+def collect_requires_bounds(
+    term: Formula | Inequality | Expression | Function,
+) -> tuple[Function, ...]:
+    """
+    Determine all :class:`Probability`, :class:`ExternalFunction`,
+    and :class:`ExternalVariable` objects in the :class:`Formula`,
+    :class:`Inequality`, :class:`Expression`, or :class:`Function`
+    :code:`term`.
+    """
+    match term:
+        case Formula(_, children) | Expression(_, children):
+            return sum(
+                (collect_requires_bounds(child) for child in children),
+                start=(),
+            )
+        case Inequality():
+            lhs_result = collect_requires_bounds(term.lhs)
+            rhs_result = collect_requires_bounds(term.rhs)
+            return lhs_result + rhs_result
+        case ElementAccess():
+            return collect_requires_bounds(term.source)
+        case Probability() | ExternalFunction() | ExternalVariable():
+            return (term,)
