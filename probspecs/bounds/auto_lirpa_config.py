@@ -2,4 +2,8 @@
 # Licensed under the MIT license
 from dataclasses import dataclass
 
-i
+
+@dataclass
+class AutoLiRPAConfig:
+    method: str
+    bound_ops: dict
