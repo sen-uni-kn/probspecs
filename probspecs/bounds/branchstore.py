@@ -44,7 +44,6 @@ class BranchStore:
         self.__data["out_ubs"] = torch.empty((0,) + out_shape)
         for key, shape in further_shapes.items():
             self.__data[key] = torch.empty((0,) + shape)
-        self.__permute = torch.empty((0,), dtype=torch.long)
 
     def append(
         self,
@@ -63,7 +62,6 @@ class BranchStore:
         :param out_ubs: The upper bounds of the output for the branches.
         :param further_values: Further values to store for the branches.
         """
-        old_len = len(self)
         further_values.update(
             {
                 "in_lbs": in_lbs,
@@ -76,8 +74,6 @@ class BranchStore:
             if values.ndim < self.__data[key].ndim:
                 values = values.unsqueeze(0)  # add batch dimension
             self.__data[key] = torch.vstack([self.__data[key], values])
-        new_idx = torch.arange(start=old_len, end=len(self), dtype=torch.long)
-        self.__permute = torch.hstack([self.__permute, new_idx])
 
     def extend(self, other: "BranchStore"):
         """
@@ -102,7 +98,9 @@ class BranchStore:
         :param stable: Sort stably (preserve order of equivalent values).
         """
         # argsort has no argument "stable"
-        _, self.__permute = torch.sort(scores, descending=descending, stable=stable)
+        _, permute = torch.sort(scores, descending=descending, stable=stable)
+        for key, values in self.__data.items():
+            self.__data[key] = values.index_select(0, permute)
 
     def pop(self, n: int) -> "BranchStore":
         """
@@ -111,9 +109,6 @@ class BranchStore:
         :param n: The number of branches to retrieve.
         :return: A new branch store containing the removed values.
         """
-        select_idx = self.__permute[:n]
-        retain_idx = self.__permute[n:]
-
         further_shapes = OrderedDict(
             [
                 (key, values.shape[1:])
@@ -124,12 +119,10 @@ class BranchStore:
         selected_store = BranchStore(
             in_shape=self.input_shape, out_shape=self.output_shape, **further_shapes
         )
+
         for key, values in self.__data.items():
-            selected_store.__data[key] = values.index_select(0, select_idx)
-            self.__data[key] = values.index_select(0, retain_idx)
-        # index_select with permute has sorted the values
-        selected_store.__permute = torch.arange(len(select_idx))
-        self.__permute = torch.arange(len(retain_idx))
+            selected_store.__data[key] = values[:n]
+            self.__data[key] = values[n:]
         return selected_store
 
     def __getitem__(
@@ -140,12 +133,11 @@ class BranchStore:
         output upper bounds and further stored values for the requested index
         (or slice).
         """
-        indices = self.__permute[item]
-        return tuple(values.index_select(0, indices) for values in self.__data.values())
+        return tuple(values[item] for values in self.__data.values())
 
     def __getattr__(self, item):
         try:
-            return self.__data[item].index_select(0, self.__permute)
+            return self.__data[item]
         except KeyError:
             raise AttributeError()
 

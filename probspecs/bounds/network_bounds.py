@@ -62,10 +62,8 @@ def network_bounds(
     while True:
         # 1. select a batch of branches
         branch_scores = score_branches()
-        branches.sort(branch_scores)
-        # each branch is later split into two branches
-        # => select batch_size/2 branches for splitting
-        selected_branches = branches.pop(batch_size // 2)
+        branches.sort(branch_scores, descending=False)
+        selected_branches = branches.pop(batch_size)
 
         # 2. select dimensions to split
         if split_heuristic.upper() == "IBP":
@@ -92,7 +90,7 @@ def network_bounds(
         # split into: lower part = [lb, mid] and upper part = [mid, ub]
         lower_part_ubs = in_ubs_flat.detach().clone()
         lower_part_ubs[:, split_dims] = midpoints
-        upper_part_lbs = in_ubs_flat.detach().clone()
+        upper_part_lbs = in_lbs_flat.detach().clone()
         upper_part_lbs[:, split_dims] = midpoints
         split_in_lbs = torch.vstack([in_lbs_flat, upper_part_lbs])
         split_in_ubs = torch.vstack([lower_part_ubs, in_ubs_flat])
@@ -107,7 +105,6 @@ def network_bounds(
 
         # 5. update branches
         branches.append(split_in_lbs, split_in_ubs, new_lbs, new_ubs)
-        print(len(branches))
 
         # 6. update best upper/lower bound
         best_lb = torch.amin(branches.out_lbs, dim=0)
