@@ -7,6 +7,7 @@ from torch import nn
 from auto_LiRPA import BoundedModule, BoundedTensor, PerturbationLpNorm
 
 from .auto_lirpa_params import AutoLiRPAParams
+from .branchstore import BranchStore
 
 
 def network_bounds(
@@ -44,57 +45,38 @@ def network_bounds(
     )
     yield (best_lb, best_ub)
 
-    branch_in_bounds = torch.stack([initial_in_lb, initial_in_ub], dim=1)
-    branch_out_bounds = torch.stack([best_lb, best_ub], dim=1)
+    branches = BranchStore(initial_in_lb.shape[1:], best_lb.shape[1:])
+    branches.append(initial_in_lb, initial_in_ub, best_lb, best_ub)
 
     def score_branches():
         """
         A score how close the lb/ub in branch_bounds is to best_lb/best_ub.
         Branches with lower scores are selected for branching.
         """
-        output_dims = tuple(range(2, branch_out_bounds.ndim))
+        output_dims = tuple(range(1, len(branches.output_shape) + 1))
         return torch.minimum(
-            torch.amin(
-                abs(best_lb - branch_out_bounds.index_select(1, torch.tensor(0))),
-                dim=output_dims,
-            ),
-            torch.amin(
-                abs(best_ub - branch_out_bounds.index_select(1, torch.tensor(1))),
-                dim=output_dims,
-            ),
-        ).squeeze(1)
+            torch.amin(abs(best_lb - branches.out_lbs), dim=output_dims),
+            torch.amin(abs(best_ub - branches.out_ubs), dim=output_dims),
+        )
 
     while True:
         # 1. select a batch of branches
         branch_scores = score_branches()
-        branch_scores_sorted = torch.sort(branch_scores)
+        branches.sort(branch_scores)
         # each branch is later split into two branches
         # => select batch_size/2 branches for splitting
-        this_batch_size = min(batch_size // 2, branch_scores.shape[0] - 1)
-        selected_mask = torch.le(
-            branch_scores, branch_scores_sorted[0][this_batch_size]
-        )
-        # since several branches may have the same score,
-        # selected_mask may select too many branches
-        for i in reversed(range(this_batch_size)):
-            if sum(selected_mask) <= batch_size // 2:
-                break
-            selected_mask[branch_scores_sorted[1][i]] = False
-
-        in_bounds_flat = branch_in_bounds.flatten(start_dim=2)
-        in_bounds_selected_flat = in_bounds_flat[selected_mask, :, :]
+        selected_branches = branches.pop(batch_size // 2)
 
         # 2. select dimensions to split
         if split_heuristic.upper() == "IBP":
             split_dims = split_ibp(
                 network,
-                in_bounds_selected_flat,
-                branch_in_bounds.shape[2:],
+                selected_branches,
                 best_lb,
                 best_ub,
             )
         elif split_heuristic.lower() == "longest-edge":
-            split_dims = split_longest_edge(in_bounds_selected_flat)
+            split_dims = split_longest_edge(selected_branches)
         else:
             raise ValueError(
                 f"Unknown split heuristic: {split_heuristic}."
@@ -102,16 +84,20 @@ def network_bounds(
             )
 
         # 3. split branches
-        split_dim_bounds = in_bounds_selected_flat.index_select(-1, split_dims)
-        midpoints = (split_dim_bounds[:, 1, :] + split_dim_bounds[:, 0, :]) / 2
-        lower_parts = in_bounds_selected_flat.detach().clone()
-        upper_parts = in_bounds_selected_flat.detach().clone()
-        lower_parts[:, 1, split_dims] = midpoints  # set upper bound to midpoints
-        upper_parts[:, 0, split_dims] = midpoints  # set lower bound to midpoints
-        split_in_bounds = torch.vstack([lower_parts, upper_parts])
-        split_in_lbs, split_in_ubs = split_in_bounds[:, 0, :], split_in_bounds[:, 1, :]
-        split_in_lbs = split_in_lbs.reshape(-1, *branch_in_bounds.shape[2:])
-        split_in_ubs = split_in_ubs.reshape(-1, *branch_in_bounds.shape[2:])
+        in_lbs_flat = selected_branches.in_lbs.flatten(1)
+        in_ubs_flat = selected_branches.in_ubs.flatten(1)
+        split_dim_lbs = in_lbs_flat.index_select(-1, split_dims)
+        split_dim_ubs = in_ubs_flat.index_select(-1, split_dims)
+        midpoints = (split_dim_ubs + split_dim_lbs) / 2.0
+        # split into: lower part = [lb, mid] and upper part = [mid, ub]
+        lower_part_ubs = in_ubs_flat.detach().clone()
+        lower_part_ubs[:, split_dims] = midpoints
+        upper_part_lbs = in_ubs_flat.detach().clone()
+        upper_part_lbs[:, split_dims] = midpoints
+        split_in_lbs = torch.vstack([in_lbs_flat, upper_part_lbs])
+        split_in_ubs = torch.vstack([lower_part_ubs, in_ubs_flat])
+        split_in_lbs = split_in_lbs.reshape(-1, *branches.input_shape)
+        split_in_ubs = split_in_ubs.reshape(-1, *branches.input_shape)
 
         # 4. compute bounds
         bounded_tensor = construct_bounded_tensor(split_in_lbs, split_in_ubs)
@@ -120,30 +106,18 @@ def network_bounds(
         )
 
         # 5. update branches
-        in_bounds_not_selected = in_bounds_flat[~selected_mask, :, :]
-        in_bounds_not_selected = in_bounds_not_selected.reshape(
-            -1, 2, *branch_in_bounds.shape[2:]
-        )
-        out_bounds_not_selected = branch_out_bounds[~selected_mask, :]
-
-        split_in_bounds = split_in_bounds.reshape(-1, 2, *branch_in_bounds.shape[2:])
-        branch_in_bounds = torch.vstack([in_bounds_not_selected, split_in_bounds])
-        # bring into format: batch dim, lb/ub, dim, output dim
-        new_out_bounds = torch.stack([new_lbs, new_ubs]).permute(
-            1, 0, *range(2, branch_out_bounds.ndim)
-        )
-        branch_out_bounds = torch.vstack([out_bounds_not_selected, new_out_bounds])
+        branches.append(split_in_lbs, split_in_ubs, new_lbs, new_ubs)
+        print(len(branches))
 
         # 6. update best upper/lower bound
-        best_lb = torch.amin(branch_out_bounds.index_select(1, torch.tensor(0)), dim=0)
-        best_ub = torch.amax(branch_out_bounds.index_select(1, torch.tensor(1)), dim=0)
+        best_lb = torch.amin(branches.out_lbs, dim=0)
+        best_ub = torch.amax(branches.out_ubs, dim=0)
         yield (best_lb, best_ub)
 
 
 def split_ibp(
     network: BoundedModule,
-    in_bounds: torch.Tensor,
-    input_shape: tuple[int, ...],
+    branches: BranchStore,
     curr_best_out_lb: torch.Tensor,
     curr_best_out_ub: torch.Tensor,
 ) -> torch.Tensor:
@@ -153,19 +127,18 @@ def split_ibp(
     or smallest upper bounds.
 
     :param network: The network for which bounds are computed.
-    :param in_bounds: A tensor of lower and upper bounds on the input.
-     The shape is :code:`(N, 2, M)` where :code:`N` is the batch size
-     and :code:`M` is the number of dimensions of the input.
-     You need to flatten the input before passing it to this function.
-    :param input_shape: The actual shape of the input (unflattened).
+    :param branches: The branches for which to determine the dimensions to split.
     :param curr_best_out_lb: The currently best output lower bound.
     :param curr_best_out_ub: The currently best output upper bound.
     :return: A tensor of dimensions to split at their mid-point.
+     The dimensions are for a flattened input.
     """
-    # split each dimension in half separately
+    in_bounds = torch.stack([branches.in_lbs, branches.in_ubs], dim=1).flatten(2)
+
+    # create the splits
     split = []
     for i in range(in_bounds.shape[-1]):
-        midpoint = (in_bounds[:, 1, i] + in_bounds[:, 0, i]) / 2
+        midpoint = (in_bounds[:, 1, i] + in_bounds[:, 0, i]) / 2.0
         lower_part = in_bounds.detach().clone()
         upper_part = in_bounds.detach().clone()
         lower_part[:, 1, i] = midpoint  # set upper bound to midpoint
@@ -176,10 +149,13 @@ def split_ibp(
     split_batch = split_in_bounds.reshape(
         split_in_bounds.shape[0] * 2 * split_in_bounds.shape[2], 2, -1
     )
-    in_lb_actual_shape = split_batch[:, 0, :].reshape(-1, *input_shape)
-    in_ub_actual_shape = split_batch[:, 1, :].reshape(-1, *input_shape)
+
+    # compute IBP bounds
+    in_lb_actual_shape = split_batch[:, 0, :].reshape(-1, *branches.input_shape)
+    in_ub_actual_shape = split_batch[:, 1, :].reshape(-1, *branches.input_shape)
     bounded_tensor = construct_bounded_tensor(in_lb_actual_shape, in_ub_actual_shape)
     out_lbs, out_ubs = network.compute_bounds(x=(bounded_tensor,), method="IBP")
+
     # recreate split dims and batch dim
     out_lbs = out_lbs.reshape(
         split_in_bounds.shape[0], 2, split_in_bounds.shape[2], *out_lbs.shape[1:]
@@ -198,20 +174,18 @@ def split_ibp(
     return split_dims
 
 
-def split_longest_edge(in_bounds: torch.Tensor) -> torch.Tensor:
+def split_longest_edge(branches: BranchStore) -> torch.Tensor:
     """
     Select dimensions to split.
     :code:`split_longest_edge` selects the dimension (for each batch element)
     that has the largest distance between lower and upper bound (the longest edge).
 
-    :param in_bounds: A tensor of lower and upper bounds on the input.
-     The shape is :code:`(N, 2, M)` where :code:`N` is the batch size
-     and :code:`M` is the number of dimensions of the input.
-     You need to flatten the input before passing it to this function.
+    :param branches: The branches for which to determine the dimensions to split.
     :return: A tensor of dimensions to split at their mid-point.
+     The dimensions are for a flattened input.
     """
-    edge_len = in_bounds[:, 1, :] - in_bounds[:, 0, :]
-    return torch.argmax(edge_len, dim=1)
+    edge_len = branches.in_ubs - branches.in_lbs
+    return torch.argmax(edge_len.flatten(1), dim=1)
 
 
 def construct_bounded_tensor(in_lb: torch.Tensor, in_ub: torch.Tensor) -> BoundedTensor:
