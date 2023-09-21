@@ -4,10 +4,11 @@ from typing import Generator, Literal
 
 import torch
 from torch import nn
-from auto_LiRPA import BoundedModule, BoundedTensor, PerturbationLpNorm
+from auto_LiRPA import BoundedModule
 
 from .auto_lirpa_params import AutoLiRPAParams
 from .branchstore import BranchStore
+from .utils import construct_bounded_tensor
 
 
 def network_bounds(
@@ -183,9 +184,3 @@ def split_longest_edge(branches: BranchStore) -> torch.Tensor:
     """
     edge_len = branches.in_ubs - branches.in_lbs
     return torch.argmax(edge_len.flatten(1), dim=1)
-
-
-def construct_bounded_tensor(in_lb: torch.Tensor, in_ub: torch.Tensor) -> BoundedTensor:
-    input_domain = PerturbationLpNorm(x_L=in_lb, x_U=in_ub)
-    midpoint = (in_ub + in_lb) / 2
-    return BoundedTensor(midpoint, ptb=input_domain)
