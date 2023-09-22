@@ -100,7 +100,7 @@ class Formula:
         self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
     ) -> np.ndarray[tuple, TL] | TL:
         """
-        Propagates bounds on external variables and external function through
+        Propagates bounds on external variables and external functions through
         the formula, evaluating whether the formula certainly holds or
         is certainly violated given the bounds.
 
@@ -118,6 +118,41 @@ class Formula:
                 return TL.and_(*child_results)
             case self.Operator.OR:
                 return TL.or_(*child_results)
+            case _:
+                raise NotImplementedError()
+
+    def satisfaction_function(
+        self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
+    ) -> torch.Tensor:
+        """
+        Computes a satisfaction function for this formula based on bounds on
+        external variables and external functions.
+
+        A satisfaction function is positive if the formula is certainly
+        satisfied and negative if satisfaction is uncertain.
+        The meaning of zero as a value of a satisfaction function is
+        undefined and can mean both satisfaction and violation.
+        Furthermore, a satisfaction function quantifies how far the formula
+        is from being satisfied.
+        Larger values indicate more robust satisfaction, while smaller
+        values indicate being more close to being violated or more
+        robust violation.
+
+        :param bounds: The bounds on the :class:`ExternalVariable`
+         and :class:`ExternalFunction` objects in this formula.
+        :return: A satisfaction score which is positive if this formula is
+         certainly satisfied according to the bounds.
+        """
+        child_results = [
+            child.satisfaction_function(**bounds) for child in self.operands
+        ]
+        match self.op:
+            case self.Operator.NOT:
+                return -child_results[0]
+            case self.Operator.AND:
+                return torch.amin(torch.stack(child_results, dim=0), dim=0)
+            case self.Operator.OR:
+                return torch.amax(torch.stack(child_results, dim=0), dim=0)
             case _:
                 raise NotImplementedError()
 
@@ -261,6 +296,38 @@ class Inequality:
             TL.TRUE,
             np.where(anti(lhs_lb, rhs_ub), TL.FALSE, TL.UNKNOWN),
         )
+
+    def satisfaction_function(
+        self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
+    ) -> torch.Tensor:
+        """
+        Computes a satisfaction function for this inequality based on bounds on
+        external variables and external functions.
+
+        A satisfaction function is positive if the inequality is certainly
+        satisfied and negative if satisfaction is uncertain.
+        The meaning of zero as a value of a satisfaction function is
+        undefined and can mean both satisfaction and violation.
+        Furthermore, a satisfaction function quantifies how far the inequality
+        is from being satisfied.
+        Larger values indicate more robust satisfaction, while smaller
+        values indicate being more close to being violated or more
+        robust violation.
+
+        :param bounds: The bounds on the :class:`ExternalVariable`
+         and :class:`ExternalFunction` objects in this inequality.
+        :return: A satisfaction score which is positive if this inequality is
+         certainly satisfied according to the bounds.
+        """
+        lhs_lb, lhs_ub = self.lhs.propagate_bounds(**bounds)
+        rhs_lb, rhs_ub = self.rhs.propagate_bounds(**bounds)
+
+        if self.op in (self.Operator.LESS_EQUAL, self.Operator.LESS_THAN):
+            # turn <= into >= by switching the sides of the inequality.
+            lhs_lb, rhs_lb = rhs_lb, lhs_lb
+            lhs_ub, rhs_ub = rhs_ub, lhs_ub
+
+        return lhs_lb - rhs_ub
 
     def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> "Inequality":
         """
@@ -653,9 +720,7 @@ class Function(ABC):
 class Constant(Function):
     val: torch.Tensor | float
 
-    def __call__(
-        self, **kwargs
-    ) -> torch.Tensor | float:
+    def __call__(self, **kwargs) -> torch.Tensor | float:
         """
         Returns the value of this constant.
 
@@ -813,9 +878,7 @@ class ExternalVariable(Function):
 
     name: str
 
-    def __call__(
-        self, **kwargs
-    ) -> torch.Tensor | float:
+    def __call__(self, **kwargs) -> torch.Tensor | float:
         return kwargs[self.name]
 
     def propagate_bounds(
