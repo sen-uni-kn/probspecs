@@ -13,7 +13,7 @@ class ProbabilityDistribution(Protocol):
     """
 
     @abstractmethod
-    def cdf(self, x: torch.Tensor):
+    def cdf(self, x: torch.Tensor) -> torch.Tensor:
         """
         The cumulative distribution function of the probability distribution.
         Supports batch processing.

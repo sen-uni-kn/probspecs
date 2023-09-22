@@ -2,26 +2,69 @@
 # Licensed under the MIT license
 from collections import OrderedDict
 from enum import Enum, auto, unique
-from typing import Sequence
+from typing import Sequence, Protocol
 
 import torch
 
 
-class InputSpace:
+class InputSpace(Protocol):
     """
-    A description of the input space of a neural network.
-    An input space consists of several attributes.
+    A description of an input space of a neural network
+    """
+
+    @property
+    def input_shape(self) -> torch.Size:
+        """
+        The shape of the tensor supplied to a neural network.
+        """
+        raise NotImplementedError()
+
+    @property
+    def input_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        The lower and upper edges of the hyperrectangular input domain
+        that this object describes.
+        """
+        raise NotImplementedError()
+
+
+class TensorInputSpace(InputSpace):
+    """
+    A regular real-valued tensor-shaped input space.
+    """
+
+    def __init__(self, lbs: torch.Tensor, ubs: torch.Tensor):
+        self.lbs = lbs
+        self.ubs = ubs
+
+    @property
+    def input_shape(self) -> torch.Size:
+        return self.lbs.shape
+
+    @property
+    def input_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.lbs, self.ubs
+
+
+class TabularInputSpace(InputSpace):
+    """
+    A description of a tabular input space.
+    Such an input space consists of several attributes.
     We consider continuous and one-hot encoded categorical
     attributes.
     Each attribute is equipped with a set of valid values.
     For continuous attributes this is an interval in real space, while
     for categorical attributes it's the set of valid values.
 
-    For proving inputs to a neural network, the input attributes
+    For proving inputs to a neural network, the attributes
     are encoded in a real-valued vector space.
     While the continuous attributes are passed on as-is,
     the categorical attributes are one-hot
     encoded, producing several dimensions in the vector space.
+    We call the real-valued vector space the
+    *encoding space*, but also the actual *input space*.
+    Contrary to this, the continuous and categorical attributes before encoding
+    reside in the *attribute space*.
     """
 
     @unique
@@ -103,14 +146,37 @@ class InputSpace:
         return attr_info
 
     @property
-    def encoding_shape(self) -> int:
+    def input_shape(self) -> torch.Size:
         """
         The shape of the encoding space.
         """
-        return sum(
+        input_size = sum(
             len(attr_info) if attr_type is self.AttributeType.CATEGORICAL else 1
             for _, attr_type, attr_info in self.__attributes
         )
+        return torch.Size([input_size])
+
+    @property
+    def input_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        The hyperrectangular domain of the encoding space.
+        This contains the upper and lower bounds of all continuous variables,
+        as well as zeros and ones for the dimensions into which categorical
+        variables are mapped.
+        """
+        lbs = []
+        ubs = []
+        for attr_name, attr_type, attr_info in self.__attributes:
+            match attr_type:
+                case self.AttributeType.CONTINUOUS:
+                    lbs.append(attr_info[0])
+                    ubs.append(attr_info[1])
+                case self.AttributeType.CATEGORICAL:
+                    lbs.append([0] * len(attr_info))
+                    ubs.append([1] * len(attr_info))
+                case _:
+                    raise NotImplementedError()
+        return torch.tensor(lbs), torch.tensor(ubs)
 
     @property
     def encoding_layout(self) -> OrderedDict[str, tuple[int]]:
@@ -134,31 +200,10 @@ class InputSpace:
             i += len(layout[attr_name])
         return layout
 
-    @property
-    def encoding_domain(self) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        The hyperrectangular domain of the encoding space.
-        This contains the upper and lower bounds of all continuous variables,
-        as well as zeros and ones for the dimensions into which categorical
-        variables are mapped.
-        """
-        lbs = []
-        ubs = []
-        for attr_name, attr_type, attr_info in self.__attributes:
-            match attr_type:
-                case self.AttributeType.CONTINUOUS:
-                    lbs.append(attr_info[0])
-                    ubs.append(attr_info[1])
-                case self.AttributeType.CATEGORICAL:
-                    lbs.append([0] * len(attr_info))
-                    ubs.append([1] * len(attr_info))
-                case _:
-                    raise NotImplementedError()
-        return torch.tensor(lbs), torch.tensor(ubs)
-
     def encode(self, x: Sequence[float | str]) -> torch.Tensor:
         """
-        Encode an input :code:`x` into the real-valued vector encoding space.
+        Encode a set of attributes :code:`x` into the real-valued encoding/input space,
+        such that they can be fed to a neural network.
 
         :param x: The input to encode. A sequence of values for the continuous
          and categorical variables in the order of the attributes.
@@ -206,7 +251,7 @@ class InputSpace:
         :return: The input as a sequence of values for the continuous
          and categorical variables in the order of the attributes.
         """
-        if x.ndim != 1 or x.size(0) != self.encoding_shape:
+        if x.ndim != 1 or x.size(0) != self.input_shape:
             raise ValueError(
                 f"Not an encoding of this input space: {x} (Dimension mismatch)"
             )

@@ -8,9 +8,10 @@ import torch
 class BranchStore:
     """
     A data structure for storing branches in branch and bound
-    A branch consists of an input domain and output bounds.
+    A branch (normally) consists of an input domain and output bounds.
     Both are represented by a pair of lower bounds (lb) and
     upper bounds (ub).
+    Branches can also store further arbitrary values.
     All values are stored in tensors to facilitate fast batch
     processing.
 
@@ -23,54 +24,51 @@ class BranchStore:
 
     def __init__(
         self,
-        in_shape: tuple | torch.Size,
-        out_shape: tuple | torch.Size,
+        in_shape: tuple | torch.Size = None,
+        out_shape: tuple | torch.Size = None,
         **further_shapes: tuple | torch.Size,
     ):
         """
         Create an empty :class:`BranchStore`.
 
         :param in_shape: The shape of the input.
+         If omitted, the attributes :code:`in_lbs` and :code:`in_ubs`
+         are unavailable.
         :param out_shape: The shape of the output.
+         If omitted, the attributes :code:`out_lbs` and :code:`out_ubs`
+         are unavailable.
         :param further_shapes: Shapes of further values to store in
          this :class:`BranchStore`.
          The keywords you use for the shapes are the keys for which
          the corresponding values are stored.
         """
         self.__data = OrderedDict()
-        self.__data["in_lbs"] = torch.empty((0,) + in_shape)
-        self.__data["in_ubs"] = torch.empty((0,) + in_shape)
-        self.__data["out_lbs"] = torch.empty((0,) + out_shape)
-        self.__data["out_ubs"] = torch.empty((0,) + out_shape)
+        if in_shape is not None:
+            self.__data["in_lbs"] = torch.empty((0,) + in_shape)
+            self.__data["in_ubs"] = torch.empty((0,) + in_shape)
+        if out_shape is not None:
+            self.__data["out_lbs"] = torch.empty((0,) + out_shape)
+            self.__data["out_ubs"] = torch.empty((0,) + out_shape)
         for key, shape in further_shapes.items():
             self.__data[key] = torch.empty((0,) + shape)
 
     def append(
         self,
-        in_lbs: torch.Tensor,
-        in_ubs: torch.Tensor,
-        out_lbs: torch.Tensor,
-        out_ubs: torch.Tensor,
-        **further_values: torch.Tensor,
+        **values: torch.Tensor,
     ):
         """
         Add a batch of branches to this data structure.
 
-        :param in_lbs: The lower bounds of the input domains of the branches.
-        :param in_ubs: The upper bounds of the input domains of the branches.
-        :param out_lbs: The lower bounds of the output for the branches.
-        :param out_ubs: The upper bounds of the output for the branches.
-        :param further_values: Further values to store for the branches.
+        :param values: The values to store for the branches.
+         Examples include,
+         - in_lbs: The lower bounds of the input domains of the branches.
+         - in_ubs: The upper bounds of the input domains of the branches.
+         - out_lbs: The lower bounds of the output for the branches.
+         - out_ubs: The upper bounds of the output for the branches.
+         - values for any further shapes you specified when initialising
+           this branch store.
         """
-        further_values.update(
-            {
-                "in_lbs": in_lbs,
-                "in_ubs": in_ubs,
-                "out_lbs": out_lbs,
-                "out_ubs": out_ubs,
-            }
-        )
-        for key, values in further_values.items():
+        for key, values in values.items():
             if values.ndim < self.__data[key].ndim:
                 values = values.unsqueeze(0)  # add batch dimension
             self.__data[key] = torch.vstack([self.__data[key], values])
@@ -125,13 +123,13 @@ class BranchStore:
             self.__data[key] = values[n:]
         return selected_store
 
-    def __getitem__(
-        self, item
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, ...]:
+    def __getitem__(self, item) -> tuple[torch.Tensor, ...]:
         """
-        Returns input lower bounds, input upper bounds, output lower bounds,
-        output upper bounds and further stored values for the requested index
-        (or slice).
+        Returns the values sorted for the item-th branch (item may also be a slice).
+        When input and output shapes are supplied at initialisation,
+        these values are the input lower bounds, input upper bounds, output lower bounds,
+        output upper bounds and further values for which shapes were supplied on
+        initialisation.
         """
         return tuple(values[item] for values in self.__data.values())
 
@@ -143,11 +141,11 @@ class BranchStore:
 
     @property
     def input_shape(self) -> torch.Size:
-        return self.shape("in_lbs")
+        return self.shape("in_lbs") if "in_lbs" in self.__data else None
 
     @property
     def output_shape(self) -> torch.Size:
-        return self.shape("out_lbs")
+        return self.shape("out_lbs") if "out_lbs" in self.__data else None
 
     def shape(self, key) -> torch.Size:
         """
