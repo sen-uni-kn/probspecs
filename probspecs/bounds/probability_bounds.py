@@ -6,7 +6,7 @@ import torch
 from torch import nn
 from auto_LiRPA import BoundedModule, BoundedTensor
 
-from .branchstore import BranchStore
+from .branch_store import BranchStore
 from .utils import construct_bounded_tensor
 from ..formula import (
     ExternalFunction,

@@ -7,7 +7,7 @@ from torch import nn
 from auto_LiRPA import BoundedModule
 
 from .auto_lirpa_params import AutoLiRPAParams
-from .branchstore import BranchStore
+from .branch_store import BranchStore
 from .utils import construct_bounded_tensor
 
 
