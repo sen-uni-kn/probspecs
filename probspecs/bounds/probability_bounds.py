@@ -93,27 +93,6 @@ def probability_bounds(
         var: domain.input_bounds for var, domain in variable_domains.items()
     }
 
-    def eval_bounds(
-        term_: Function, var_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]]
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        if isinstance(term_, ExternalVariable):
-            return term_.propagate_bounds(**var_bounds)
-        elif isinstance(term_, ExternalFunction):
-            network = networks[term_.func_name]
-            bounded_tensor = construct_bounded_tensor(*var_bounds[term_.arg_names[0]])
-            return network.compute_bounds(
-                x=(bounded_tensor,), method=auto_lirpa_params.method
-            )
-        else:
-            raise NotImplementedError()
-
-    def probability_mass(var_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]]):
-        return prod(
-            variable_distributions[var].cdf(var_ubs)
-            - variable_distributions[var].cdf(var_lbs)
-            for var, (var_lbs, var_ubs) in var_bounds.items()
-        )
-
     # simplify the probability subject
     subj, variable_bounds = apply_symbolic_bounds(probability.subject, variable_bounds)
 
@@ -121,7 +100,7 @@ def probability_bounds(
     bounded_terms_substitution = {
         term: ExternalVariable(str(term)) for term in requires_bounds
     }
-    top_level_subj = subj.replace(bounded_terms_substitution)
+    subj_skeleton = subj.replace(bounded_terms_substitution)
 
     # make sure probability doesn't contain nested probabilities.
     for term in requires_bounds:
@@ -152,6 +131,29 @@ def probability_bounds(
         if isinstance(external, ExternalFunction)
     }
 
+    def eval_bounds(
+        term_: Function, var_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if isinstance(term_, ExternalVariable):
+            return term_.propagate_bounds(**var_bounds)
+        elif isinstance(term_, ExternalFunction):
+            network = networks[term_.func_name]
+            bounded_tensor = construct_bounded_tensor(*var_bounds[term_.arg_names[0]])
+            return network.compute_bounds(
+                x=(bounded_tensor,), method=auto_lirpa_params.method
+            )
+        else:
+            raise NotImplementedError()
+
+    def probability_mass(
+        var_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]]
+    ) -> torch.Tensor:
+        return prod(
+            variable_distributions[var].cdf(var_ubs)
+            - variable_distributions[var].cdf(var_lbs)
+            for var, (var_lbs, var_ubs) in var_bounds.items()
+        )
+
     branches = BranchStore(
         in_shape=None,  # input shapes stored separately for each variable
         **{
@@ -166,8 +168,9 @@ def probability_bounds(
     intermediate_bounds = {
         str(term): eval_bounds(term, variable_bounds) for term in requires_bounds
     }
-    # TODO: need bounds on sat_score
-    sat_score = top_level_subj.satisfaction_function(**intermediate_bounds)
+    sat_lb, sat_ub = subj_skeleton.satisfaction_function.propagate_bounds(
+        **intermediate_bounds
+    )
     prob_mass = probability_mass(variable_bounds)
     branches.append(
         **{
@@ -176,14 +179,24 @@ def probability_bounds(
         **{
             f"{var}_ubs": domain.input_shape for var, domain in variable_domains.items()
         },
-        out_shape=(1,),  # a satisfaction score
-        probability_mass=(1,),
+        out_lbs=sat_lb,
+        out_ubs=sat_ub,
+        probability_mass=prob_mass,
     )
 
     def eval_probability_bounds() -> tuple[torch.Tensor, torch.Tensor]:
-        pass  # TODO
+        # satisfaction lower bound > 0 => sufficient condition for satisfaction
+        prob_lb = torch.sum(
+            torch.where(branches.out_lbs > 0, branches.probability_mass, 0)
+        )
+        # satisfaction upper bound > 0 => necessary condition for satisfaction
+        # the branches with satisfaction upper bound > 0 are those for which
+        # satisfaction has not yet been disproven.
+        prob_ub = torch.sum(
+            torch.where(branches.out_ubs > 0, branches.probability_mass, 0)
+        )
+        return prob_lb, prob_ub
 
-    # TODO: bound probability (this is not how it works)
     best_lb, best_ub = eval_probability_bounds()
     yield (best_lb, best_ub)
 

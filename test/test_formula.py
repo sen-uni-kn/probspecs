@@ -7,6 +7,7 @@ import torch
 
 from probspecs import *
 from probspecs import TrinaryLogic as TL
+from probspecs.formula import max_expr, min_expr
 
 
 def test_construct_formula_1():
@@ -47,6 +48,22 @@ def test_construct_formula_4():
         >= 0.8
     )
     print(formula_1 | formula_2)
+
+
+def test_construct_formula_5():
+    net = ExternalFunction("net", ("x",))
+    x = ExternalVariable("x")
+    formula = -net
+    print(formula)
+
+
+def test_construct_formula_6():
+    net = ExternalFunction("net", ("x",))
+    x = ExternalVariable("x")
+    y = ExternalVariable("y")
+    z = ExternalVariable("z")
+    formula = max_expr(min_expr(x, y), z, net)
+    print(formula)
 
 
 def test_eval_formula_1():
@@ -133,7 +150,7 @@ def test_propagate_bounds_1():
 def test_propagate_bounds_2():
     x = ExternalVariable("x")
     y = ExternalVariable("y")
-    z = x*x + 7 * (x*y) - y/(2*x - 1)
+    z = x * x + 7 * (x * y) - y / (2 * x - 1)
 
     torch.manual_seed(556917027411149)
 
@@ -157,6 +174,37 @@ def test_propagate_bounds_2():
         z_values = z(x=x_values, y=y_values)
         assert torch.all(z_lb <= z_values)
         assert torch.all(z_ub >= z_values)
+
+
+def test_propagate_bounds_3():
+    x = ExternalVariable("x")
+    y = ExternalVariable("y")
+    z = ExternalVariable("z")
+    a = ExternalVariable("a")
+    f = max_expr(min_expr(x, y), -z, a * 2)
+
+    def random_bounds():
+        mid = 200 * torch.rand(10) - 100
+        dev = 100 * torch.rand(10)
+        return mid - dev, mid + dev
+
+    for _ in range(10):
+        x_lb, x_ub = random_bounds()
+        y_lb, y_ub = random_bounds()
+        z_lb, z_ub = random_bounds()
+        a_lb, a_ub = random_bounds()
+        f_lb, f_ub = f.propagate_bounds(
+            x=(x_lb, x_ub), y=(y_lb, y_ub), z=(z_lb, z_ub), a=(a_lb, a_ub)
+        )
+
+        x_values = x_lb + (x_ub - x_lb) * torch.rand(100, 10)
+        y_values = y_lb + (y_ub - y_lb) * torch.rand(100, 10)
+        z_values = z_lb + (z_ub - z_lb) * torch.rand(100, 10)
+        a_values = a_lb + (a_ub - a_lb) * torch.rand(100, 10)
+
+        f_values = f(x=x_values, y=y_values, z=z_values, a=a_values)
+        assert torch.all(f_lb <= f_values)
+        assert torch.all(f_ub >= f_values)
 
 
 if __name__ == "__main__":

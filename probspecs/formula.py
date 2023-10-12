@@ -121,38 +121,31 @@ class Formula:
             case _:
                 raise NotImplementedError()
 
-    def satisfaction_function(
-        self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
-    ) -> torch.Tensor:
+    @property
+    def satisfaction_function(self) -> "Expression":
         """
-        Computes a satisfaction function for this formula based on bounds on
-        external variables and external functions.
+        A satisfaction function for this formula as an :class:`Expression`.
 
-        A satisfaction function is positive if the formula is certainly
-        satisfied and negative if satisfaction is uncertain.
+        When evaluated, a satisfaction function is positive if the formula is
+        satisfied and negative if it is unsatisfied.
         The meaning of zero as a value of a satisfaction function is
         undefined and can mean both satisfaction and violation.
-        Furthermore, a satisfaction function quantifies how far the formula
+        Additionally, a satisfaction function quantifies how far the formula
         is from being satisfied.
-        Larger values indicate more robust satisfaction, while smaller
-        values indicate being more close to being violated or more
-        robust violation.
+        Larger positive values indicate more robust satisfaction, while smaller
+        values indicate being more close to violation (positive values) or more
+        robust violation (negative values).
 
-        :param bounds: The bounds on the :class:`ExternalVariable`
-         and :class:`ExternalFunction` objects in this formula.
-        :return: A satisfaction score which is positive if this formula is
-         certainly satisfied according to the bounds.
+        :return: An expression representing a satisfaction function for this formula.
         """
-        child_results = [
-            child.satisfaction_function(**bounds) for child in self.operands
-        ]
+        child_sat_fns = [child.satisfaction_function for child in self.operands]
         match self.op:
             case self.Operator.NOT:
-                return -child_results[0]
+                return -child_sat_fns[0]
             case self.Operator.AND:
-                return torch.amin(torch.stack(child_results, dim=0), dim=0)
+                return min_expr(*child_sat_fns)
             case self.Operator.OR:
-                return torch.amax(torch.stack(child_results, dim=0), dim=0)
+                return max_expr(*child_sat_fns)
             case _:
                 raise NotImplementedError()
 
@@ -297,37 +290,27 @@ class Inequality:
             np.where(anti(lhs_lb, rhs_ub), TL.FALSE, TL.UNKNOWN),
         )
 
-    def satisfaction_function(
-        self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
-    ) -> torch.Tensor:
+    @property
+    def satisfaction_function(self) -> "Expression":
         """
-        Computes a satisfaction function for this inequality based on bounds on
-        external variables and external functions.
+        A satisfaction function for this inequality as an :class:`Expression`.
 
-        A satisfaction function is positive if the inequality is certainly
-        satisfied and negative if satisfaction is uncertain.
+        When evaluated, a satisfaction function is positive if the inequality is
+        satisfied and negative if it is unsatisfied.
         The meaning of zero as a value of a satisfaction function is
         undefined and can mean both satisfaction and violation.
-        Furthermore, a satisfaction function quantifies how far the inequality
+        Additionally, a satisfaction function quantifies how far the inequality
         is from being satisfied.
-        Larger values indicate more robust satisfaction, while smaller
-        values indicate being more close to being violated or more
-        robust violation.
+        Larger positive values indicate more robust satisfaction, while smaller
+        values indicate being more close to violation (positive values) or more
+        robust violation (negative values).
 
-        :param bounds: The bounds on the :class:`ExternalVariable`
-         and :class:`ExternalFunction` objects in this inequality.
-        :return: A satisfaction score which is positive if this inequality is
-         certainly satisfied according to the bounds.
+        :return: An expression representing a satisfaction function for this inequality.
         """
-        lhs_lb, lhs_ub = self.lhs.propagate_bounds(**bounds)
-        rhs_lb, rhs_ub = self.rhs.propagate_bounds(**bounds)
-
         if self.op in (self.Operator.LESS_EQUAL, self.Operator.LESS_THAN):
-            # turn <= into >= by switching the sides of the inequality.
-            lhs_lb, rhs_lb = rhs_lb, lhs_lb
-            lhs_ub, rhs_ub = rhs_ub, lhs_ub
-
-        return lhs_lb - rhs_ub
+            return self.rhs - self.lhs
+        else:
+            return self.lhs - self.rhs
 
     def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> "Inequality":
         """
@@ -366,8 +349,11 @@ class Expression:
     class Operator(Enum):
         ADD = auto()
         SUBTRACT = auto()
+        NEGATE = auto()
         MULTIPLY = auto()
         DIVIDE = auto()
+        MIN = auto()
+        MAX = auto()
 
         def eval_func(self):
             match self:
@@ -375,10 +361,26 @@ class Expression:
                     return sum
                 case self.SUBTRACT:
                     return lambda xs: xs[0] - sum(xs[1:])
+                case self.NEGATE:
+                    return lambda xs: -xs[0]
                 case self.MULTIPLY:
                     return prod
                 case self.DIVIDE:
                     return lambda xs: ops.truediv(xs[0], xs[1])
+                case self.MIN:
+
+                    def min_(xs):
+                        xs = [torch.as_tensor(x) for x in xs]
+                        return torch.amin(torch.stack(xs, dim=0), dim=0)
+
+                    return min_
+                case self.MAX:
+
+                    def max_(xs):
+                        xs = [torch.as_tensor(x) for x in xs]
+                        return torch.amax(torch.stack(xs, dim=0), dim=0)
+
+                    return max_
                 case _:
                     raise NotImplementedError()
 
@@ -386,12 +388,16 @@ class Expression:
             match self:
                 case self.ADD:
                     return "+"
-                case self.SUBTRACT:
+                case self.SUBTRACT | self.NEGATE:
                     return "-"
                 case self.MULTIPLY:
                     return "*"
                 case self.DIVIDE:
                     return "/"
+                case self.MIN:
+                    return "min"
+                case self.MAX:
+                    return "max"
                 case _:
                     raise NotImplementedError()
 
@@ -399,10 +405,12 @@ class Expression:
     args: tuple[Union["Expression", "Function"], ...]
 
     def __post_init__(self):
-        if len(self.args) < 2:
-            raise ValueError("Expressions require at least two arguments.")
         if self.op == self.Operator.DIVIDE and len(self.args) != 2:
             raise ValueError("DIVIDE requires exactly two arguments.")
+        if self.op == self.Operator.NEGATE and len(self.args) != 1:
+            raise ValueError("NEGATE requires exactly one argument.")
+        if self.op != self.Operator.NEGATE and len(self.args) < 2:
+            raise ValueError(f"Operator {self.op} require at least two arguments.")
 
     def __call__(self, **kwargs) -> torch.Tensor | float:
         """
@@ -439,6 +447,8 @@ class Expression:
                 lb = eval_op((arg_lbs[0], *arg_ubs[1:]))
                 ub = eval_op((arg_ubs[0], *arg_lbs[1:]))
                 return lb, ub
+            case self.Operator.NEGATE:
+                return -arg_ubs[0], -arg_lbs[0]
             case self.Operator.MULTIPLY:
                 # for x*y compute x_lb * y_lb, x_lb * y_ub, x_ub * y_lb and x_ub * y_ub
                 all_combinations = itertools.product(*arg_bounds)
@@ -465,6 +475,9 @@ class Expression:
                 )
                 ub = torch.where(y_lb.gt(0) | y_ub.eq(0), x_ub * 1 / y_lb, torch.inf)
                 return lb, ub
+            case self.Operator.MIN | self.Operator.MAX:
+                eval_op = self.op.eval_func()
+                return eval_op(arg_lbs), eval_op(arg_ubs)
             case _:
                 raise NotImplementedError()
 
@@ -554,6 +567,9 @@ class Expression:
         other = as_expression(other)
         return Expression(Expression.Operator.SUBTRACT, (other, self))
 
+    def __neg__(self):
+        return Expression(Expression.Operator.NEGATE, (self,))
+
     def __mul__(
         self: Union["Expression", "Function"],
         other: Union["Expression", "Function", torch.Tensor, float],
@@ -601,7 +617,34 @@ class Expression:
             else:
                 return res
 
-        return f" {self.op} ".join([convert_arg(arg) for arg in self.args])
+        match self.op:
+            case Expression.Operator.NEGATE:
+                return f"{self.op}{convert_arg(self.args[0])}"
+            case Expression.Operator.MIN | Expression.Operator.MAX:
+                args_str = ", ".join([convert_arg(arg) for arg in self.args])
+                return f"{self.op}({args_str})"
+            case _:
+                return f" {self.op} ".join([convert_arg(arg) for arg in self.args])
+
+
+def min_expr(*args: Union[Expression, "Function"]) -> Expression:
+    """
+    Creates the expression :code:`min(arg1, arg2, ..., argN)`.
+
+    :param args: The arguments from which to take the minimum.
+    :return: An :class:`Expression`.
+    """
+    return Expression(Expression.Operator.MIN, args)
+
+
+def max_expr(*args: Union[Expression, "Function"]) -> Expression:
+    """
+    Creates the expression :code:`max(arg1, arg2, ..., argN)`.
+
+    :param args: The arguments from which to take the maximum.
+    :return: An :class:`Expression`.
+    """
+    return Expression(Expression.Operator.MAX, args)
 
 
 class Function(ABC):
@@ -689,6 +732,9 @@ class Function(ABC):
         self, other: Union[Expression, "Function", torch.Tensor, float]
     ) -> "Expression":
         return Expression.__rsub__(self, other)
+
+    def __neg__(self):
+        return Expression(Expression.Operator.NEGATE, (self,))
 
     def __mul__(
         self, other: Union[Expression, "Function", torch.Tensor, float]
