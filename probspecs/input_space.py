@@ -98,12 +98,12 @@ class TabularInputSpace(InputSpace):
         return tuple(attr[0] for attr in self.__attributes)
 
     @property
-    def attribute_types(self) -> tuple[str, ...]:
+    def attribute_types(self) -> tuple[AttributeType, ...]:
         """
         The types (continuous/categorical) of the attributes,
         ordered as the attributes are ordered.
         """
-        return tuple(attr[0] for attr in self.__attributes)
+        return tuple(attr[1] for attr in self.__attributes)
 
     def attribute_name(self, index: int) -> str:
         """
@@ -129,7 +129,7 @@ class TabularInputSpace(InputSpace):
         :raises ValueError: If the i-th attribute isn't continuous.
         """
         attr_name, attr_type, attr_info = self.__attributes[index]
-        if attr_type is not self.AttributeType.CONTINOUS:
+        if attr_type is not self.AttributeType.CONTINUOUS:
             raise ValueError(f"Attribute {attr_name} has no input bounds.")
         return attr_info
 
@@ -159,7 +159,7 @@ class TabularInputSpace(InputSpace):
     @property
     def input_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
         """
-        The hyperrectangular domain of the encoding space.
+        The hyper-rectangular domain of the encoding space.
         This contains the upper and lower bounds of all continuous variables,
         as well as zeros and ones for the dimensions into which categorical
         variables are mapped.
@@ -172,32 +172,44 @@ class TabularInputSpace(InputSpace):
                     lbs.append(attr_info[0])
                     ubs.append(attr_info[1])
                 case self.AttributeType.CATEGORICAL:
-                    lbs.append([0] * len(attr_info))
-                    ubs.append([1] * len(attr_info))
+                    lbs.extend([0.0] * len(attr_info))
+                    ubs.extend([1.0] * len(attr_info))
                 case _:
                     raise NotImplementedError()
         return torch.tensor(lbs), torch.tensor(ubs)
 
     @property
-    def encoding_layout(self) -> OrderedDict[str, tuple[int]]:
+    def encoding_layout(self) -> OrderedDict[str, int | OrderedDict[str, int]]:
         """
         The layout of the real-valued vector space that the input space is
         encoded in. This layout is a mapping from attributes to the dimensions
         of the vector space into which the attributes are mapped.
         While continuous attributes occupy a single dimension in the vector space,
         a categorical attribute occupies as many dimensions as the attribute has values.
+        For categorical attributes, the dimensions to which the attribute is mapped
+        is a mapping from attribute values to dimensions.
+        The dimension for a value is the dimension indicating whether the value
+        is taken on in the one-hot encoding of the categorical attribute.
+
+        Example:
+         - Attributes: age: continuous, color: categorical (blue, red, green, other)
+         - Encoding layout:
+           `{age: 0, color: {blue: 1, red: 2, green: 3, other: 4}}`
         """
-        layout = OrderedDict()
+        layout: OrderedDict[str, int | OrderedDict] = OrderedDict()
         i = 0
         for attr_name, attr_type, attr_info in self.__attributes:
             match attr_type:
                 case self.AttributeType.CONTINUOUS:
-                    layout[attr_name] = (i,)
+                    layout[attr_name] = i
+                    i += 1
                 case self.AttributeType.CATEGORICAL:
-                    layout[attr_name] = tuple(range(i, i + len(attr_info)))
+                    layout[attr_name] = OrderedDict(
+                        zip(attr_info, range(i, i + len(attr_info)), strict=True)
+                    )
+                    i += len(attr_info)
                 case _:
                     raise NotImplementedError()
-            i += len(layout[attr_name])
         return layout
 
     def encode(self, x: Sequence[float | str]) -> torch.Tensor:
@@ -238,7 +250,7 @@ class TabularInputSpace(InputSpace):
                             f"with values {attr_info}: {value}"
                         )
                     for category in attr_info:
-                        encoding.append(1 if category == value else 0)
+                        encoding.append(1.0 if category == value else 0.0)
                 case _:
                     raise NotImplementedError()
         return torch.tensor(encoding)
@@ -251,7 +263,7 @@ class TabularInputSpace(InputSpace):
         :return: The input as a sequence of values for the continuous
          and categorical variables in the order of the attributes.
         """
-        if x.ndim != 1 or x.size(0) != self.input_shape:
+        if x.ndim != 1 or x.size(0) != self.input_shape[0]:
             raise ValueError(
                 f"Not an encoding of this input space: {x} (Dimension mismatch)"
             )
@@ -260,7 +272,7 @@ class TabularInputSpace(InputSpace):
         for attr_name, attr_type, attr_info in self.__attributes:
             match attr_type:
                 case self.AttributeType.CONTINUOUS:
-                    value = x[layout[attr_name][0]]
+                    value = x[layout[attr_name]]
                     lb, ub = attr_info
                     if not lb <= value <= ub:
                         raise ValueError(
@@ -268,22 +280,25 @@ class TabularInputSpace(InputSpace):
                             f"with bounds [{lb}, {ub}]: {value}"
                         )
                 case self.AttributeType.CATEGORICAL:
-                    one_hot = x.index_select(0, torch.tensor(layout[attr_name]))
                     value = None
-                    for i, val in enumerate(one_hot):
+                    for attr_val, i in layout[attr_name].items():
                         if not torch.isclose(
-                            val, torch.zeros(())
-                        ) and not torch.isclose(val, torch.ones(())):
+                            x[i], torch.zeros(())
+                        ) and not torch.isclose(x[i], torch.ones(())):
                             raise ValueError(
                                 f"Invalid one-hot encoding of categorical attribute {attr_name}: {one_hot}"
                             )
-                        if torch.isclose(val, torch.ones(())):
+                        if torch.isclose(x[i], torch.ones(())):
                             if value is not None:
                                 raise ValueError(
                                     f"Invalid one-hot encoding of categorical attribute {attr_name}: {one_hot}"
                                 )
-                            value = attr_info[i]
+                            value = attr_val
                 case _:
                     raise NotImplementedError()
             decoding.append(value)
         return tuple(decoding)
+
+    def __len__(self):
+        """The number of attributes of this input domain."""
+        return len(self.__attributes)
