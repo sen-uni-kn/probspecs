@@ -23,3 +23,19 @@ class ProbabilityDistribution(Protocol):
         :return: Cumulative distribution function evaluated at x.
         """
         raise NotImplementedError()
+
+
+class ToTensor(ProbabilityDistribution):
+    """
+    Wraps the values returned by another probability distribution in tensors.
+
+    Can be used, for example to leverage scipy distributions.
+    Example: :code:`ToTensor(scipy.stats.norm)`
+    """
+
+    def __init__(self, distribution):
+        self.__distribution = distribution
+
+    def cdf(self, x: torch.Tensor) -> torch.Tensor:
+        value = self.__distribution.cdf(x)
+        return torch.as_tensor(value)

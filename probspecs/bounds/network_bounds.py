@@ -180,7 +180,7 @@ def split_longest_edge(branches: BranchStore) -> torch.Tensor:
 
     :param branches: The branches for which to determine the dimensions to split.
     :return: A tensor of dimensions to split at their mid-point.
-     The dimensions are for a flattened input.
+     The dimensions refer to a flattened input.
     """
     edge_len = branches.in_ubs - branches.in_lbs
     return torch.argmax(edge_len.flatten(1), dim=1)

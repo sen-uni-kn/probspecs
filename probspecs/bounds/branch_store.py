@@ -15,6 +15,13 @@ class BranchStore:
     All values are stored in tensors to facilitate fast batch
     processing.
 
+    All values stored in a branch store are available as attributes.
+    For example, the input lower bounds of a :class:`BranchStore` :code:`store`
+    can be accessed as :code:`store.in_lbs`.
+    Similarly, :code:`store.in_ubs`, :code:`store.out_lbs` and :code:`store.out_ubs`
+    are available.
+    Further values stored in a :class:`BranchStore` are available similarly.
+
     BranchStores support sorting their contents using the :code:`sort`
     method.
     Before sorting, branches are stored in order of addition.
@@ -125,7 +132,7 @@ class BranchStore:
 
     def __getitem__(self, item) -> tuple[torch.Tensor, ...]:
         """
-        Returns the values sorted for the item-th branch (item may also be a slice).
+        Returns the values of the item-th branch (item may also be a slice).
         When input and output shapes are supplied at initialisation,
         these values are the input lower bounds, input upper bounds, output lower bounds,
         output upper bounds and further values for which shapes were supplied on

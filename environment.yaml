@@ -7,6 +7,7 @@ dependencies:
   - torchvision=0.13.1
   - cudatoolkit=11.3
   - numpy=1.25.*
+  - scipy=1.11.*
   - packaging=20.*
   - pytest=7.4.*
   - pylint=2.16.*

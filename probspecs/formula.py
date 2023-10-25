@@ -122,7 +122,7 @@ class Formula:
                 raise NotImplementedError()
 
     @property
-    def satisfaction_function(self) -> "Expression":
+    def satisfaction_function(self) -> Union["Expression", "Function"]:
         """
         A satisfaction function for this formula as an :class:`Expression`.
 
@@ -143,8 +143,12 @@ class Formula:
             case self.Operator.NOT:
                 return -child_sat_fns[0]
             case self.Operator.AND:
+                if len(child_sat_fns) == 0:
+                    return Constant(torch.tensor(torch.inf))
                 return min_expr(*child_sat_fns)
             case self.Operator.OR:
+                if len(child_sat_fns) == 0:
+                    return Constant(torch.tensor(-torch.inf))
                 return max_expr(*child_sat_fns)
             case _:
                 raise NotImplementedError()
@@ -405,12 +409,12 @@ class Expression:
     args: tuple[Union["Expression", "Function"], ...]
 
     def __post_init__(self):
+        if len(self.args) == 0:
+            raise ValueError("Expression requires at least one argument.")
         if self.op == self.Operator.DIVIDE and len(self.args) != 2:
             raise ValueError("DIVIDE requires exactly two arguments.")
         if self.op == self.Operator.NEGATE and len(self.args) != 1:
             raise ValueError("NEGATE requires exactly one argument.")
-        if self.op != self.Operator.NEGATE and len(self.args) < 2:
-            raise ValueError(f"Operator {self.op} require at least two arguments.")
 
     def __call__(self, **kwargs) -> torch.Tensor | float:
         """
@@ -802,36 +806,59 @@ def as_expression(
         return Constant(value)
 
 
-@dataclass(frozen=True)
 class ElementAccess(Function):
     """
-    Access an element of the result of an expression or function.
+    Access an element of an expression or function.
     """
 
-    source: Expression | Function
-    target_index: int | tuple[int, ...] | slice | tuple[slice, ...]
+    def __init__(
+        self,
+        source: Expression | Function,
+        target_item: int | slice | tuple[int | slice, ...],
+    ):
+        self.__source = source
+        self.__target_item = target_item
+
+    @property
+    def source(self) -> Expression | Function:
+        return self.__source
+
+    @property
+    def target_item(self) -> int | slice | tuple[int | slice, ...]:
+        return self.__target_item
 
     def __call__(self, **kwargs) -> torch.Tensor | float:
         source_val = self.source(**kwargs)
-        return source_val[self.target_index]
+        return source_val[self.target_item]
 
     def propagate_bounds(
         self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
     ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
         source_lb, source_ub = self.source(**bounds)
-        return source_lb[self.target_index], source_ub[self.target_index]
+        return source_lb[self.target_item], source_ub[self.target_item]
 
     def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> MAIN_TYPES:
         if self in substitutions:
             return substitutions[self]
         else:
-            return ElementAccess(self.source.replace(substitutions), self.target_index)
+            return ElementAccess(self.source.replace(substitutions), self.target_item)
 
     def __repr__(self):
         source_str = str(self.source)
         if isinstance(self.source, Expression):
             source_str = f"({source_str})"
-        return f"{source_str}[{self.target_index}]"
+        return f"{source_str}[{self.target_item}]"
+
+    def __hash__(self):
+        def convert(item: int | slice | tuple[int | slice, ...]):
+            if isinstance(item, int):
+                return item
+            elif isinstance(item, slice):
+                return ("slice", item.start, item.stop, item.step)
+            else:
+                return tuple(convert(elem) for elem in item)
+
+        return hash((self.source, convert(self.target_item)))
 
 
 @dataclass(frozen=True)

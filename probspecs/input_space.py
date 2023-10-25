@@ -2,6 +2,7 @@
 # Licensed under the MIT license
 from collections import OrderedDict
 from enum import Enum, auto, unique
+from math import prod
 from typing import Sequence, Protocol
 
 import torch
@@ -149,6 +150,7 @@ class TabularInputSpace(InputSpace):
     def input_shape(self) -> torch.Size:
         """
         The shape of the encoding space.
+        The encoding space is one-dimensional.
         """
         input_size = sum(
             len(attr_info) if attr_type is self.AttributeType.CATEGORICAL else 1
@@ -286,12 +288,14 @@ class TabularInputSpace(InputSpace):
                             x[i], torch.zeros(())
                         ) and not torch.isclose(x[i], torch.ones(())):
                             raise ValueError(
-                                f"Invalid one-hot encoding of categorical attribute {attr_name}: {one_hot}"
+                                f"Invalid one-hot encoding of categorical attribute "
+                                f"{attr_name}. Entry is neither 0.0 nor 1.0."
                             )
                         if torch.isclose(x[i], torch.ones(())):
                             if value is not None:
                                 raise ValueError(
-                                    f"Invalid one-hot encoding of categorical attribute {attr_name}: {one_hot}"
+                                    f"Invalid one-hot encoding of categorical attribute "
+                                    f"{attr_name}. Multiple 1.0 entries."
                                 )
                             value = attr_val
                 case _:
@@ -302,3 +306,108 @@ class TabularInputSpace(InputSpace):
     def __len__(self):
         """The number of attributes of this input domain."""
         return len(self.__attributes)
+
+
+class CombinedInputSpace(InputSpace):
+    """
+    A combined multi-variable input space flattening variables values
+    and stacking them in a large vector.
+    """
+
+    def __init__(self, variable_domains: OrderedDict[str, InputSpace]):
+        """
+        Creates a new combined input space from a set of variables.
+
+        :param variable_domains: The variables and their input spaces.
+        """
+        super().__init__()
+        self.__domains = variable_domains
+        first_dim_after = []
+        i = 0
+        for var, domain in variable_domains.items():
+            var_size = prod(domain.input_shape)
+            i += var_size
+            first_dim_after.append(i)
+        self.__first_dim_after = tuple(first_dim_after)
+
+    @property
+    def variables(self) -> tuple[str, ...]:
+        return tuple(self.__domains.keys())
+
+    @property
+    def offsets(self) -> tuple[int, ...]:
+        """
+        The first dimensions at which the values of each :code:`variable`
+        are located in the combined input space.
+        """
+        return (0,) + self.__first_dim_after[:-1]
+
+    @property
+    def input_shape(self) -> torch.Size:
+        return torch.Size((self.__first_dim_after[-1],))
+
+    @property
+    def input_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
+        lbs, ubs = zip(*[d.input_bounds for d in self.__domains.values()])
+        lbs = [lb.flatten() for lb in lbs]
+        ubs = [ub.flatten() for ub in ubs]
+        return torch.hstack(lbs), torch.hstack(ubs)
+
+    def variable_at(self, dim: int) -> str:
+        for var, first_dim_after in zip(self.__domains.keys(), self.__first_dim_after):
+            if first_dim_after > dim:
+                return var
+
+    def domain_of(self, var: str) -> InputSpace:
+        return self.__domains[var]
+
+    def dimensions_of(self, var: str) -> int:
+        """The number of dimensions occupied by variable :code:`var`"""
+        return prod(self.__domains[var].input_shape)
+
+    def local_dim(self, dim: int) -> int:
+        """
+        Convert a dimension into the dimension of the input space of the variable
+        that is located at that dimension.
+
+        :param dim: The dimension to convert.
+        :return: The dimension that corresponds to :code:`dim` in
+         :code:`in_space.domain_of(in_space.variable_at(dim))`.
+        """
+        for first_dim_after in self.__first_dim_after:
+            if first_dim_after > dim:
+                return dim - first_dim_after
+
+    def combine(self, **values: torch.Tensor) -> torch.Tensor:
+        """
+        Combine the values of the different variables so that
+        the result lies in this combined input space.
+
+        Example:
+        :code:`input_space.combine(x=torch.tensor([1, 2, 3], y=torch.tensor([4, 5, 6])`
+        gives :code:`torch.tensor([1, 2, 3, 4, 5, 6])` if the variable :code:`x`
+        comes before :code:`y` in the :class:`CombinedInputSpace` :code:`input_space`.
+
+        :param values: Batches of values of the variables.
+        :return: The flattened values, hstacked (:code:`torch.hstack`).
+        """
+        return torch.hstack([values[var].flatten(1) for var in self.__domains])
+
+    def decompose(self, combined: torch.Tensor) -> dict[str, torch.Tensor]:
+        """
+        Splits a batch of values from the combined input space
+        into the values of each variable.
+        The values for each variable have the shape of the variable's
+        input space.
+
+        :param combined: A batch of values from the combined input space.
+        :return: Batches of values of the individual variables.
+        """
+        values = {}
+        prev_first_after = 0
+        for i, (var, domain) in enumerate(self.__domains.items()):
+            var_first_after = self.__first_dim_after[i]
+            var_values = combined[:, prev_first_after:var_first_after]
+            values[var] = var_values.reshape((-1,) + domain.input_shape)
+            prev_first_after = var_first_after
+        return values
