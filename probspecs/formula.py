@@ -7,10 +7,11 @@ from functools import reduce
 from dataclasses import dataclass
 import operator as ops
 from math import prod
-from typing import Union
+from typing import Callable, Union
 
 import numpy as np
 import torch
+from frozendict import frozendict
 
 from .trinary_logic import TrinaryLogic as TL
 from .utils import contains_unbracketed
@@ -194,6 +195,31 @@ class Formula:
                 self.op, tuple(child.replace(substitutions) for child in self.operands)
             )
 
+    def collect(
+        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
+    ) -> tuple[MAIN_TYPES, ...]:
+        """
+        Collects sub-terms that match a predicate.
+
+        :param predicate: A function determining whether to collect a given term.
+        :param continue_for_matches: Whether to continue to search sub-terms
+         of matching terms for further matches.
+         Example: if a formula already matches, also search for matches
+         in the formulas operands? If :code:`continue_for_matches` is :code:`True`,
+         :code:`collect` continues to search the operands.
+         Otherwise (default), only the formula is contained in the return value
+         of :code:`collect`, but not any potential matches in the operands.
+        :return: A tuple of all sub-terms for which :code:`predicate`
+         return :code:`True`.
+        """
+        matches = []
+        if predicate(self):
+            matches.append(self)
+        if len(matches) == 0 or continue_for_matches:
+            for child in self.operands:
+                matches += child.collect(predicate, continue_for_matches)
+        return tuple(matches)
+
     def __and__(self, other: BOOL_TERM) -> "Formula":
         return Formula(Formula.Operator.AND, (self, other))
 
@@ -367,6 +393,31 @@ class Inequality:
                 self.op,
                 self.rhs.replace(substitutions),
             )
+
+    def collect(
+        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
+    ) -> tuple[MAIN_TYPES, ...]:
+        """
+        Collects sub-terms that match a predicate.
+
+        :param predicate: A function determining whether to collect a given term.
+        :param continue_for_matches: Whether to continue to search sub-terms
+         of matching terms for further matches.
+         Example: if a formula already matches, also search for matches
+         in the formulas operands? If :code:`continue_for_matches` is :code:`True`,
+         :code:`collect` continues to search the operands.
+         Otherwise (default), only the formula is contained in the return value
+         of :code:`collect`, but not any potential matches in the operands.
+        :return: A tuple of all sub-terms for which :code:`predicate`
+         return :code:`True`.
+        """
+        matches = []
+        if predicate(self):
+            matches.append(self)
+        if len(matches) == 0 or continue_for_matches:
+            matches += self.lhs.collect(predicate, continue_for_matches)
+            matches += self.rhs.collect(predicate, continue_for_matches)
+        return tuple(matches)
 
     def __and__(self, other: BOOL_TERM) -> "Formula":
         return Formula(Formula.Operator.AND, (self, other))
@@ -592,6 +643,31 @@ class Expression:
                 self.op, tuple(child.replace(substitutions) for child in self.args)
             )
 
+    def collect(
+        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
+    ) -> tuple[MAIN_TYPES, ...]:
+        """
+        Collects sub-terms that match a predicate.
+
+        :param predicate: A function determining whether to collect a given term.
+        :param continue_for_matches: Whether to continue to search sub-terms
+         of matching terms for further matches.
+         Example: if a formula already matches, also search for matches
+         in the formulas operands? If :code:`continue_for_matches` is :code:`True`,
+         :code:`collect` continues to search the operands.
+         Otherwise (default), only the formula is contained in the return value
+         of :code:`collect`, but not any potential matches in the operands.
+        :return: A tuple of all sub-terms for which :code:`predicate`
+         return :code:`True`.
+        """
+        matches = []
+        if predicate(self):
+            matches.append(self)
+        if len(matches) == 0 or continue_for_matches:
+            for child in self.args:
+                matches += child.collect(predicate, continue_for_matches)
+        return tuple(matches)
+
     def __le__(
         self: NUMERIC_TERM,
         other: Union[NUMERIC_TERM, torch.Tensor, float],
@@ -790,6 +866,25 @@ class Function(ABC):
         """
         raise NotImplementedError()
 
+    def collect(
+        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
+    ) -> tuple[MAIN_TYPES, ...]:
+        """
+        Collects sub-terms that match a predicate.
+
+        :param predicate: A function determining whether to collect a given term.
+        :param continue_for_matches: Whether to continue to search sub-terms
+         of matching terms for further matches.
+         Example: if a formula already matches, also search for matches
+         in the formulas operands? If :code:`continue_for_matches` is :code:`True`,
+         :code:`collect` continues to search the operands.
+         Otherwise (default), only the formula is contained in the return value
+         of :code:`collect`, but not any potential matches in the operands.
+        :return: A tuple of all sub-terms for which :code:`predicate`
+         return :code:`True`.
+        """
+        raise NotImplementedError()
+
     def __le__(self, other: Union[NUMERIC_TERM, torch.Tensor, float]) -> Inequality:
         return Expression.__le__(self, other)
 
@@ -868,6 +963,11 @@ class Constant(Function):
     def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> MAIN_TYPES:
         return substitutions.get(self, self)
 
+    def collect(
+        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
+    ) -> tuple[MAIN_TYPES, ...]:
+        return tuple(x for x in (self,) if predicate(x))
+
     def __repr__(self):
         return f"{self.val}"
 
@@ -923,6 +1023,16 @@ class ElementAccess(Function):
             return substitutions[self]
         else:
             return ElementAccess(self.source.replace(substitutions), self.target_item)
+
+    def collect(
+        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
+    ) -> tuple[MAIN_TYPES, ...]:
+        matches = []
+        if predicate(self):
+            matches.append(self)
+        if len(matches) == 0 or continue_for_matches:
+            matches += self.source.collect(predicate, continue_for_matches)
+        return tuple(matches)
 
     def __repr__(self):
         source_str = str(self.source)
@@ -991,19 +1101,24 @@ class Probability(Function):
         if self in substitutions:
             return substitutions[self]
         else:
-            return Probability(
-                self.subject.replace(substitutions),
-                self.condition.replace(substitutions),
+            cond = (
+                self.condition.replace(substitutions)
+                if self.condition is not None
+                else None
             )
+            return Probability(self.subject.replace(substitutions), cond)
 
-    def _estimate(self, subject_vals, condition_vals):
-        subject_vals = torch.as_tensor(subject_vals)
-        if self.condition is not None:
-            condition_vals = torch.as_tensor(condition_vals)
-            if condition_vals.float().sum() == 0:  # condition matches nowhere
-                return torch.tensor(torch.nan)
-            subject_vals = subject_vals[condition_vals]
-        return subject_vals.float().mean()
+    def collect(
+        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
+    ) -> tuple[MAIN_TYPES, ...]:
+        matches = []
+        if predicate(self):
+            matches.append(self)
+        if len(matches) == 0 or continue_for_matches:
+            matches += self.subject.collect(predicate, continue_for_matches)
+            if self.condition is not None:
+                matches += self.condition.collect(predicate, continue_for_matches)
+        return tuple(matches)
 
     def __repr__(self):
         if self.condition is not None:
@@ -1050,6 +1165,11 @@ class ExternalVariable(Function):
 
     def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> MAIN_TYPES:
         return substitutions.get(self, self)
+
+    def collect(
+        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
+    ) -> tuple[MAIN_TYPES, ...]:
+        return tuple(x for x in (self,) if predicate(x))
 
     def __repr__(self):
         return self.name
@@ -1112,6 +1232,11 @@ class ExternalFunction(Function):
     def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> MAIN_TYPES:
         return substitutions.get(self, self)
 
+    def collect(
+        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
+    ) -> tuple[MAIN_TYPES, ...]:
+        return tuple(x for x in (self,) if predicate(x))
+
     def __repr__(self):
         return f"{self.func_name}(" + ", ".join(self.arg_names) + ")"
 
@@ -1126,7 +1251,7 @@ class Compose(Function):
     """
 
     func: Function
-    args: dict[str, NUMERIC_TERM]
+    args: frozendict[str, NUMERIC_TERM]
 
     def __call__(self, **kwargs):
         args = {name: expr(**kwargs) for name, expr in self.args.items()}
@@ -1138,13 +1263,33 @@ class Compose(Function):
         raise NotImplementedError()
 
     def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> MAIN_TYPES:
-        args = {name: expr.replace(substitutions) for name, expr in self.args.items()}
-        func = self.func.replace(substitutions)
-        return Compose(func, args)
+        if self in substitutions:
+            return substitutions[self]
+        else:
+            args = {
+                name: expr.replace(substitutions) for name, expr in self.args.items()
+            }
+            func = self.func.replace(substitutions)
+            return Compose(func, frozendict(args))
+
+    def collect(
+        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
+    ) -> tuple[MAIN_TYPES, ...]:
+        matches = []
+        if predicate(self):
+            matches.append(self)
+        if len(matches) == 0 or continue_for_matches:
+            for child in self.args.values():
+                matches += child.collect(predicate, continue_for_matches)
+        return tuple(matches)
 
     def __repr__(self):
+        if isinstance(self.func, ExternalFunction):
+            func_str = self.func.func_name
+        else:
+            func_str = f"({self.func})"
         return (
-            f"{self.func.func_name}("
+            f"{func_str}("
             + ", ".join(f"{name}={repr(expr)}" for name, expr in self.args.items())
             + ")"
         )
@@ -1158,10 +1303,10 @@ def compose(__func: Function, **kwargs: NUMERIC_TERM | torch.Tensor | float) -> 
     to :class:`Constants`.
     See :class:`Compose` for more information.
 
-    :param func: The function that is composed.
+    :param __func: The function that is composed.
     :param kwargs: The expressions, functions, and values to use
      for the functions arguments.
     :return: A :class:`Compose` instance.
     """
     kwargs = {key: as_expression(value) for key, value in kwargs.items()}
-    return Compose(__func, kwargs)
+    return Compose(__func, frozendict(kwargs))

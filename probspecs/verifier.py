@@ -9,6 +9,7 @@ import multiprocessing as mp
 import torch
 
 from .formula import (
+    Compose,
     Formula,
     Probability,
     Function,
@@ -127,7 +128,7 @@ def _compute_bounds_worker(
     external_vars_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]],
     external_vars_distributions: dict[str, Any],  # TODO: type
     results_queue: mp.Queue,
-    device: torch.device | str
+    device: torch.device | str,
 ):
     """
     A worker for computing bounds on one or multiple target terms.
@@ -139,6 +140,47 @@ def _compute_bounds_worker(
      for which to compute bounds.
     :param device: Which device to use for computing bounds.
     """
+    pass
+
+
+def fuse_compositions(
+    term: Formula | Inequality | Expression | Function,
+) -> tuple[
+    Formula | Inequality | Expression | Function, dict[Compose, ExternalFunction]
+]:
+    """
+    Replaces all function compositions (:class:`Compose` instances)
+    with new external functions that evaluate the composition.
+
+    :param term: The term in which to fuse the compositions.
+    :return:
+     - A new term with the same top-level structure, but compositions
+       replaced by new external functions.
+     - A mapping from compositions to the new external functions they
+       are replaced with.
+    """
+
+    def collect_compositions(term_):
+        """
+        Collects top-level compositions.
+        """
+        match term:
+            case Formula(_, children) | Expression(_, children):
+                return sum(
+                    (collect_compositions(child) for child in children),
+                    start=(),
+                )
+            case Inequality():
+                lhs_result = collect_compositions(term.lhs)
+                rhs_result = collect_compositions(term.rhs)
+                return lhs_result + rhs_result
+            case ElementAccess():
+                return collect_compositions(term.source)
+            case Probability() | ExternalFunction() | ExternalVariable():
+                return ()
+            case Compose():
+                return (term,)
+
     pass
 
 
