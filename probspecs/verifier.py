@@ -7,19 +7,22 @@ from time import time
 import multiprocessing as mp
 
 import torch
+from frozendict import frozendict
 
 from .formula import (
-    Compose,
+    Composition,
     Formula,
     Probability,
     Function,
     Inequality,
     Expression,
-    ElementAccess,
     ExternalFunction,
     ExternalVariable,
+    ExplicitFunction,
 )
 from .trinary_logic import TrinaryLogic as TL
+from .bounds.probability_bounds import probability_bounds
+from .bounds.network_bounds import network_bounds
 
 
 @unique
@@ -75,6 +78,9 @@ def verify(
      The verification witness is a set of bounds for functions in :code:`formula`
      that allows to prove/disprove :code:`formula`.
     """
+    # Replace compositions of functions by a single function computing
+    # the composition
+    formula = fuse_compositions(formula)
 
     requires_bounds = collect_requires_bounds(formula)
     bounded_terms_substitution = {
@@ -138,15 +144,43 @@ def _compute_bounds_worker(
 
     :param target_terms: The terms (probabilities, networks)
      for which to compute bounds.
+    :param externals: Values for external variables and function for evaluating
+     the target terms.
+    :param external_vars_bounds: Bounds for external variables.
+    :param external_vars_distributions: Probability distributions for external
+     variables.
+    :param results_queue: The :code:`multiprocessing.Queue` for posting results.
     :param device: Which device to use for computing bounds.
     """
-    pass
+
+    def get_bounds_gen(term: Function):
+        if isinstance(term, Probability):
+            return probability_bounds(
+                probability=term,
+                networks=None,  # TODO
+            )
+        elif isinstance(term, ExplicitFunction):
+            return network_bounds(
+                term.func,
+                input_bounds=None,  # TODO
+            )
+        elif isinstance(term, ExternalFunction):
+            return network_bounds(
+                externals[term.func_name],
+                input_bounds=None,  # TODO
+            )
+
+    bounds_gens = [get_bounds_gen(term) for term in target_terms]
+    while True:
+        for term, bounds_gen in zip(target_terms, bounds_gens, strict=True):
+            new_bounds = next(bounds_gen)
+            results_queue.put((term, new_bounds))
 
 
 def fuse_compositions(
     term: Formula | Inequality | Expression | Function,
 ) -> tuple[
-    Formula | Inequality | Expression | Function, dict[Compose, ExternalFunction]
+    Formula | Inequality | Expression | Function, dict[Composition, ExplicitFunction]
 ]:
     """
     Replaces all function compositions (:class:`Compose` instances)
@@ -159,29 +193,56 @@ def fuse_compositions(
      - A mapping from compositions to the new external functions they
        are replaced with.
     """
+    compositions = term.collect(lambda sub: isinstance(sub, Composition))
 
-    def collect_compositions(term_):
-        """
-        Collects top-level compositions.
-        """
-        match term:
-            case Formula(_, children) | Expression(_, children):
-                return sum(
-                    (collect_compositions(child) for child in children),
-                    start=(),
-                )
-            case Inequality():
-                lhs_result = collect_compositions(term.lhs)
-                rhs_result = collect_compositions(term.rhs)
-                return lhs_result + rhs_result
-            case ElementAccess():
-                return collect_compositions(term.source)
-            case Probability() | ExternalFunction() | ExternalVariable():
-                return ()
-            case Compose():
-                return (term,)
+    # Fuse sub-compositions first to simplify collecting arguments.
+    # Reason: for compositions inside compositions the arguments of the
+    # Compose.func attributes may not be collected as arguments of the
+    # function with which the top composition is replaced.
+    compositions = {
+        compose: Composition(
+            compose.func,
+            frozendict(
+                {arg: fuse_compositions(expr)[0] for arg, expr in compose.args.items()}
+            ),
+        )
+        for compose in compositions
+    }
 
-    pass
+    def replacement(compose: Composition) -> ExternalFunction:
+        def is_external(term_):
+            return isinstance(term_, ExternalVariable | ExternalFunction)
+
+        def get_args(external: ExternalVariable | ExternalFunction):
+            if isinstance(external, ExternalVariable):
+                return (external.name,)
+            elif isinstance(external, ExternalFunction):
+                if isinstance(external, ExplicitFunction):
+                    return external.arg_names
+                else:
+                    return (external.func_name,) + external.arg_names
+
+        externals = compose.collect(is_external)
+        compose_args = sum((get_args(e) for e in externals), ())
+        if isinstance(compose.func, ExternalFunction) and not isinstance(
+            compose.func, ExplicitFunction
+        ):
+            compose_args += (compose.func.func_name,)
+        compose_args = tuple(set(compose_args))
+
+        def eval_compose(*args):
+            kwargs = {
+                name: value for name, value in zip(compose_args, args, strict=True)
+            }
+            return compose(**kwargs)
+
+        return ExplicitFunction(f"[{compose}]", compose_args, eval_compose)
+
+    substitution = {
+        orig_compose: replacement(fused_compose)
+        for orig_compose, fused_compose in compositions.items()
+    }
+    return term.replace(substitution), substitution
 
 
 def collect_requires_bounds(
@@ -193,17 +254,8 @@ def collect_requires_bounds(
     :class:`Inequality`, :class:`Expression`, or :class:`Function`
     :code:`term`.
     """
-    match term:
-        case Formula(_, children) | Expression(_, children):
-            return sum(
-                (collect_requires_bounds(child) for child in children),
-                start=(),
-            )
-        case Inequality():
-            lhs_result = collect_requires_bounds(term.lhs)
-            rhs_result = collect_requires_bounds(term.rhs)
-            return lhs_result + rhs_result
-        case ElementAccess():
-            return collect_requires_bounds(term.source)
-        case Probability() | ExternalFunction() | ExternalVariable():
-            return (term,)
+
+    def is_prob_func_or_variable(term_):
+        return isinstance(term_, Probability | ExternalFunction | ExternalVariable)
+
+    return term.collect(is_prob_func_or_variable)

@@ -27,7 +27,8 @@ __all__ = [
     "Probability",
     "ExternalVariable",
     "ExternalFunction",
-    "Compose",
+    "ExplicitFunction",
+    "Composition",
     "as_expression",
     "prob",
     "min_expr",
@@ -1205,7 +1206,7 @@ class ExternalFunction(Function):
         self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
     ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
         """
-        Tries to retrieve
+        Tries to retrieve the string
         `func_name(arg_names[0], ..., arg_names[-1])` from :code:`bounds`
         first, then tries to retrieve `func_name` from :code:´bounds`.
         One of these keys needs to be present in :code:`bounds`.
@@ -1214,11 +1215,11 @@ class ExternalFunction(Function):
         .. code-block::
 
             fn = ExternalFunction("fn", "x", "y")
-            fn.propagate_bounds({"fn(x,y)": (-1.0, 1.0)})  # succeeds
+            fn.propagate_bounds({"fn(x, y)": (-1.0, 1.0)})  # succeeds
             fn.propagate_bounds({"fn": (-1.0, 1.0)})  # succeeds
             fn.propagate_bounds({"x": (-1.0, 1.0), "y": (10.0, 11.0)})  # fails
         """
-        with_args_name = self.func_name + "(" + ",".join(self.arg_names) + ")"
+        with_args_name = self.func_name + "(" + ", ".join(self.arg_names) + ")"
         if with_args_name in bounds:
             return bounds[with_args_name]
         elif self.func_name in bounds:
@@ -1242,12 +1243,31 @@ class ExternalFunction(Function):
 
 
 @dataclass(frozen=True)
-class Compose(Function):
+class ExplicitFunction(ExternalFunction):
+    """
+    Wraps a concrete python function.
+    In difference to :class:`ExternalFunction`, the python function
+    doesn't need to be supplied when evaluating expressions containing
+    this function.
+    """
+
+    func: Callable[[torch.Tensor | float, ...], torch.Tensor | float]
+
+    def __call__(self, **kwargs):
+        func_args = (kwargs[name] for name in self.arg_names)
+        return self.func(*func_args)
+
+    def __repr__(self):
+        return super().__repr__()
+
+
+@dataclass(frozen=True)
+class Composition(Function):
     """
     Composes a :class:`Function` with other
     :class:`Function` or :class:`Expression` instances.
 
-    :class:`Compose` does not implement :code:`propagate_bounds`.
+    :class:`Composition` does not implement :code:`propagate_bounds`.
     """
 
     func: Function
@@ -1270,7 +1290,7 @@ class Compose(Function):
                 name: expr.replace(substitutions) for name, expr in self.args.items()
             }
             func = self.func.replace(substitutions)
-            return Compose(func, frozendict(args))
+            return Composition(func, frozendict(args))
 
     def collect(
         self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
@@ -1295,18 +1315,20 @@ class Compose(Function):
         )
 
 
-def compose(__func: Function, **kwargs: NUMERIC_TERM | torch.Tensor | float) -> Compose:
+def compose(
+    __func: Function, **kwargs: NUMERIC_TERM | torch.Tensor | float
+) -> Composition:
     """
     Composes a function with :class:`Expression` or :class:`Function`
     instances.
     Converts :class:`torch.Tensor` and :class:`float` arguments
     to :class:`Constants`.
-    See :class:`Compose` for more information.
+    See :class:`Composition` for more information.
 
     :param __func: The function that is composed.
     :param kwargs: The expressions, functions, and values to use
      for the functions arguments.
-    :return: A :class:`Compose` instance.
+    :return: A :class:`Composition` instance.
     """
     kwargs = {key: as_expression(value) for key, value in kwargs.items()}
-    return Compose(__func, frozendict(kwargs))
+    return Composition(__func, frozendict(kwargs))

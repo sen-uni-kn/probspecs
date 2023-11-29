@@ -74,6 +74,18 @@ def test_construct_compose_1():
     print(formula)
 
 
+def test_construct_compose_2():
+    x = ExternalVariable("x")
+    y = ExternalVariable("y")
+    f = ExternalFunction("f", ("z",))
+    g = ExternalFunction("g", ("z",))
+    h = ExternalFunction("h", ("z", "w"))
+
+    e1 = 0.99 - compose(f, z=compose(g, z=x)) * y
+    e2 = 2 / compose(h, z=e1, w=compose(f, z=compose(f, z=x)))
+    print(e2)
+
+
 def test_eval_compose_1():
     f = ExternalFunction("f", ("x", "y", "a"))
     z = ExternalVariable("z")
