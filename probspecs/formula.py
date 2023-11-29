@@ -26,12 +26,20 @@ __all__ = [
     "Probability",
     "ExternalVariable",
     "ExternalFunction",
+    "Compose",
     "as_expression",
     "prob",
+    "min_expr",
+    "max_expr",
+    "compose",
+    "BOOL_TERM",
+    "NUMERIC_TERM",
 ]
 
 
 MAIN_TYPES = Union["Formula", "Inequality", "Expression", "Function"]
+BOOL_TERM = Union["Formula", "Inequality"]
+NUMERIC_TERM = Union["Expression", "Function"]
 PRECOMPUTED = dict[MAIN_TYPES, torch.Tensor | bool]
 
 
@@ -40,11 +48,28 @@ class Formula:
     """
     A formula :math:`P(x) \\wedge R(x)`,
     :math:`P(x) \\vee R(x)` or :math:`\\neg P(x)`
-    where :math:`P` and :math:`R` are Inequalities.
+    where :math:`P` and :math:`R` are :class:`Inequality` instances
+    or other :class:`Formula` instances.
+
+    Examples:
+
+    .. math::
+        x \\geq 5 \\land y < 7
+
+        \\neg (f(x) \\geq y \\lor x \\leq 0)
 
     For negating formulas, use :code:`~formula`.
     Similarly, use :code:`&`
     and :code:`|` to and- or or- connect formulae.
+
+    Example:
+    .. code-block::
+
+        x = ExternalVariable("x")
+        y = ExternalVariable("y")
+        f1 = x >= 5  # Inequality
+        f2 = y < 7  # Inequality
+        f3 = f1 | ~f2  # Formula
     """
 
     @unique
@@ -76,7 +101,7 @@ class Formula:
                     raise NotImplementedError()
 
     op: Operator
-    operands: tuple[Union["Formula", "Inequality"], ...]
+    operands: tuple[BOOL_TERM, ...]
 
     def __post_init__(self):
         if self.op == self.Operator.NOT and len(self.operands) != 1:
@@ -122,7 +147,7 @@ class Formula:
                 raise NotImplementedError()
 
     @property
-    def satisfaction_function(self) -> Union["Expression", "Function"]:
+    def satisfaction_function(self) -> NUMERIC_TERM:
         """
         A satisfaction function for this formula as an :class:`Expression`.
 
@@ -169,10 +194,10 @@ class Formula:
                 self.op, tuple(child.replace(substitutions) for child in self.operands)
             )
 
-    def __and__(self, other: Union["Formula", "Inequality"]) -> "Formula":
+    def __and__(self, other: BOOL_TERM) -> "Formula":
         return Formula(Formula.Operator.AND, (self, other))
 
-    def __or__(self, other: Union["Formula", "Inequality"]) -> "Formula":
+    def __or__(self, other: BOOL_TERM) -> "Formula":
         return Formula(Formula.Operator.OR, (self, other))
 
     def __invert__(self) -> "Formula":
@@ -199,12 +224,21 @@ class Formula:
 @dataclass(frozen=True)
 class Inequality:
     """
-    An inequality :math:`f(x) \\ otherlesseqgtr b`
+    An inequality :math:`f(x) \\lesseqgtr b`
     where :math:`\\lesseqgtr` is either :math:`\\leq`,
-    :math:`\\geq`, or :math:`<`.
+    :math:`\\geq`, :math:`<`, or :math:`>`.
 
     You can combine Inequalities into formulas
     using :code:`~`, :code:`&`, and :code:`|`.
+
+    Example:
+    .. code-block::
+
+        x = ExternalVariable("x")
+        y = ExternalVariable("y")
+        f1 = x >= 5  # Inequality
+        f2 = y < 7  # Inequality
+        f3 = f1 | ~f2  # Formula
     """
 
     @unique
@@ -334,10 +368,10 @@ class Inequality:
                 self.rhs.replace(substitutions),
             )
 
-    def __and__(self, other: Union[Formula, "Inequality"]) -> "Formula":
+    def __and__(self, other: BOOL_TERM) -> "Formula":
         return Formula(Formula.Operator.AND, (self, other))
 
-    def __or__(self, other: Union[Formula, "Inequality"]) -> "Formula":
+    def __or__(self, other: BOOL_TERM) -> "Formula":
         return Formula(Formula.Operator.OR, (self, other))
 
     def __invert__(self) -> Formula:
@@ -349,6 +383,63 @@ class Inequality:
 
 @dataclass(frozen=True)
 class Expression:
+    """
+    An expression like :math:`-A`, :math:`A + B`,
+    :math:`A - B`, :math:`A\\cdot B`, :math:`\\frac{A}{B},
+    :math:`\\min(A, B)`, or :math:`\\max(A, B)`,
+    where :math:`A` and :math:`B` are other :class:`Expression`
+    instances or :code:`Function` instances.
+
+    Examples:
+
+    .. math::
+        (x + y) \\cdot 12
+
+        \\min(x - y, \\frac{z}{y}, 4x)
+
+    You can combine :class:`Expressions` into new :class:`Expressions`
+    using :code:`+`, :code:`-`, :code:`*`, and :code:`/`.
+    For example,
+    .. code-block::
+
+        x = ExternalVariable("x")
+        y = ExternalVariable("y")
+        e1 = x + y
+        e2 = y - x
+        e3 = x * y * y
+        e4 = x / x
+
+    Use the :func:`min_expr` and :func:`max_expr` functions to create
+    :class:`Expressions` such as :math:`\\min(A, B, C)`
+    and :math:`\\max(A, B, C)`.
+
+    Generally, :class:`Expressions` can evaluate to a :code:`torch.Tensor`.
+    To access the element :code:`(i, j, k) of a tensor-valued
+    :class:`Expression` :code:`e`, use :code:`e[i, j, k]`.
+    This creates an :class:`ElementAccess` instance, which can be used
+    like an :class:`Expression`.
+
+    To create :class:`Inequality` instances from :class:`Expressions`,
+    use :code:`>=`, :code:`<=`, :code:`<`, and :code:`>`.
+    For example,
+    .. code-block::
+
+        x = ExternalVariable("x")
+        y = ExternalVariable("y")
+        e1 = x - y  # Expression
+        e2 = -x * y  # Expression
+        i1 = e1 > e2
+
+    Most operations also support multiple arguments,
+    such that :math:`A \\cdot B \\cdot C \\cdot D`
+    or :math:`\\max(A, B, C)` are also
+    single :class:`Expression` instances.
+    Exceptions are the negation operation (:math:`-A`),
+    which requires exactly one argument, and the division
+    operation (:math:`\\frac{A}{B}`), which requires exactly
+    two arguments.
+    """
+
     @unique
     class Operator(Enum):
         ADD = auto()
@@ -406,7 +497,7 @@ class Expression:
                     raise NotImplementedError()
 
     op: Operator
-    args: tuple[Union["Expression", "Function"], ...]
+    args: tuple[NUMERIC_TERM, ...]
 
     def __post_init__(self):
         if len(self.args) == 0:
@@ -502,71 +593,71 @@ class Expression:
             )
 
     def __le__(
-        self: Union["Expression", "Function"],
-        other: Union["Expression", "Function", torch.Tensor, float],
+        self: NUMERIC_TERM,
+        other: Union[NUMERIC_TERM, torch.Tensor, float],
     ) -> Inequality:
         other = as_expression(other)
         return Inequality(self, Inequality.Operator.LESS_EQUAL, other)
 
     def __ge__(
-        self: Union["Expression", "Function"],
-        other: Union["Expression", "Function", torch.Tensor, float],
+        self: NUMERIC_TERM,
+        other: Union[NUMERIC_TERM, torch.Tensor, float],
     ) -> Inequality:
         other = as_expression(other)
         return Inequality(self, Inequality.Operator.GREATER_EQUAL, other)
 
     def __lt__(
-        self: Union["Expression", "Function"],
-        other: Union["Expression", "Function", torch.Tensor, float],
+        self: NUMERIC_TERM,
+        other: Union[NUMERIC_TERM, torch.Tensor, float],
     ) -> Inequality:
         other = as_expression(other)
         return Inequality(self, Inequality.Operator.LESS_THAN, other)
 
     def __gt__(
-        self: Union["Expression", "Function"],
-        other: Union["Expression", "Function", torch.Tensor, float],
+        self: NUMERIC_TERM,
+        other: Union[NUMERIC_TERM, torch.Tensor, float],
     ) -> Inequality:
         other = as_expression(other)
         return Inequality(self, Inequality.Operator.GREATER_THAN, other)
 
     def __eq__(
-        self: Union["Expression", "Function"],
-        other: Union["Expression", "Function", torch.Tensor, float],
+        self: NUMERIC_TERM,
+        other: Union[NUMERIC_TERM, torch.Tensor, float],
     ) -> Formula:
         other = as_expression(other)
         return (self >= other) & (self <= other)
 
     def __ne__(
-        self: Union["Expression", "Function"],
-        other: Union["Expression", "Function", torch.Tensor, float],
+        self: NUMERIC_TERM,
+        other: Union[NUMERIC_TERM, torch.Tensor, float],
     ) -> Formula:
         other = as_expression(other)
         return (self > other) | (self < other)
 
     def __add__(
-        self: Union["Expression", "Function"],
-        other: Union["Expression", "Function", torch.Tensor, float],
+        self: NUMERIC_TERM,
+        other: Union[NUMERIC_TERM, torch.Tensor, float],
     ) -> "Expression":
         other = as_expression(other)
         return Expression(Expression.Operator.ADD, (self, other))
 
     def __radd__(
-        self: Union["Expression", "Function"],
-        other: Union["Expression", "Function", torch.Tensor, float],
+        self: NUMERIC_TERM,
+        other: Union[NUMERIC_TERM, torch.Tensor, float],
     ) -> "Expression":
         other = as_expression(other)
         return Expression(Expression.Operator.ADD, (other, self))
 
     def __sub__(
-        self: Union["Expression", "Function"],
-        other: Union["Expression", "Function", torch.Tensor, float],
+        self: NUMERIC_TERM,
+        other: Union[NUMERIC_TERM, torch.Tensor, float],
     ) -> "Expression":
         other = as_expression(other)
         return Expression(Expression.Operator.SUBTRACT, (self, other))
 
     def __rsub__(
-        self: Union["Expression", "Function"],
-        other: Union["Expression", "Function", torch.Tensor, float],
+        self: NUMERIC_TERM,
+        other: Union[NUMERIC_TERM, torch.Tensor, float],
     ) -> "Expression":
         other = as_expression(other)
         return Expression(Expression.Operator.SUBTRACT, (other, self))
@@ -575,35 +666,35 @@ class Expression:
         return Expression(Expression.Operator.NEGATE, (self,))
 
     def __mul__(
-        self: Union["Expression", "Function"],
-        other: Union["Expression", "Function", torch.Tensor, float],
+        self: NUMERIC_TERM,
+        other: Union[NUMERIC_TERM, torch.Tensor, float],
     ) -> "Expression":
         other = as_expression(other)
         return Expression(Expression.Operator.MULTIPLY, (self, other))
 
     def __rmul__(
-        self: Union["Expression", "Function"],
-        other: Union["Expression", "Function", torch.Tensor, float],
+        self: NUMERIC_TERM,
+        other: Union[NUMERIC_TERM, torch.Tensor, float],
     ) -> "Expression":
         other = as_expression(other)
         return Expression(Expression.Operator.MULTIPLY, (other, self))
 
     def __truediv__(
-        self: Union["Expression", "Function"],
-        other: Union["Expression", "Function", torch.Tensor, float],
+        self: NUMERIC_TERM,
+        other: Union[NUMERIC_TERM, torch.Tensor, float],
     ) -> "Expression":
         other = as_expression(other)
         return Expression(Expression.Operator.DIVIDE, (self, other))
 
     def __rtruediv__(
-        self: Union["Expression", "Function"],
-        other: Union["Expression", "Function", torch.Tensor, float],
+        self: NUMERIC_TERM,
+        other: Union[NUMERIC_TERM, torch.Tensor, float],
     ) -> "Expression":
         other = as_expression(other)
         return Expression(Expression.Operator.DIVIDE, (other, self))
 
     def __getitem__(
-        self: Union["Expression", "Function"],
+        self: NUMERIC_TERM,
         item: int | tuple[int, ...] | slice | tuple[slice, ...],
     ) -> "Function":
         return ElementAccess(self, item)
@@ -631,7 +722,7 @@ class Expression:
                 return f" {self.op} ".join([convert_arg(arg) for arg in self.args])
 
 
-def min_expr(*args: Union[Expression, "Function"]) -> Expression:
+def min_expr(*args: NUMERIC_TERM) -> Expression:
     """
     Creates the expression :code:`min(arg1, arg2, ..., argN)`.
 
@@ -641,7 +732,7 @@ def min_expr(*args: Union[Expression, "Function"]) -> Expression:
     return Expression(Expression.Operator.MIN, args)
 
 
-def max_expr(*args: Union[Expression, "Function"]) -> Expression:
+def max_expr(*args: NUMERIC_TERM) -> Expression:
     """
     Creates the expression :code:`max(arg1, arg2, ..., argN)`.
 
@@ -652,6 +743,18 @@ def max_expr(*args: Union[Expression, "Function"]) -> Expression:
 
 
 class Function(ABC):
+    """
+    The :class:`Function` class is the abstract super class of classes,
+    such as :class:`Constant`, :class:`ExternalVariable`,
+    :class:`ExternalFunction`, and :class:`Probability`.
+    :class:`Function` instances are the building blocks of :class:`Expression`
+    instances.
+
+    :class:`Function` instances can be combined to build :class:`Expression` instances
+    or :class:`Inequality` instances in the same way as :class:`Expression`
+    instances.
+    """
+
     def __call__(self, **kwargs) -> torch.Tensor | float:
         """
         Evaluates this function.
@@ -687,76 +790,52 @@ class Function(ABC):
         """
         raise NotImplementedError()
 
-    def __le__(
-        self, other: Union[Expression, "Function", torch.Tensor, float]
-    ) -> Inequality:
+    def __le__(self, other: Union[NUMERIC_TERM, torch.Tensor, float]) -> Inequality:
         return Expression.__le__(self, other)
 
-    def __ge__(
-        self, other: Union[Expression, "Function", torch.Tensor, float]
-    ) -> Inequality:
+    def __ge__(self, other: Union[NUMERIC_TERM, torch.Tensor, float]) -> Inequality:
         return Expression.__ge__(self, other)
 
-    def __lt__(
-        self, other: Union[Expression, "Function", torch.Tensor, float]
-    ) -> Inequality:
+    def __lt__(self, other: Union[NUMERIC_TERM, torch.Tensor, float]) -> Inequality:
         return Expression.__lt__(self, other)
 
-    def __gt__(
-        self, other: Union[Expression, "Function", torch.Tensor, float]
-    ) -> Inequality:
+    def __gt__(self, other: Union[NUMERIC_TERM, torch.Tensor, float]) -> Inequality:
         return Expression.__gt__(self, other)
 
-    def __eq__(
-        self, other: Union[Expression, "Function", torch.Tensor, float]
-    ) -> Formula:
+    def __eq__(self, other: Union[NUMERIC_TERM, torch.Tensor, float]) -> Formula:
         return Expression.__eq__(self, other)
 
-    def __ne__(
-        self, other: Union[Expression, "Function", torch.Tensor, float]
-    ) -> Formula:
+    def __ne__(self, other: Union[NUMERIC_TERM, torch.Tensor, float]) -> Formula:
         return Expression.__ne__(self, other)
 
-    def __add__(
-        self, other: Union[Expression, "Function", torch.Tensor, float]
-    ) -> "Expression":
+    def __add__(self, other: Union[NUMERIC_TERM, torch.Tensor, float]) -> "Expression":
         return Expression.__add__(self, other)
 
-    def __radd__(
-        self, other: Union[Expression, "Function", torch.Tensor, float]
-    ) -> "Expression":
+    def __radd__(self, other: Union[NUMERIC_TERM, torch.Tensor, float]) -> "Expression":
         return Expression.__radd__(self, other)
 
-    def __sub__(
-        self, other: Union[Expression, "Function", torch.Tensor, float]
-    ) -> "Expression":
+    def __sub__(self, other: Union[NUMERIC_TERM, torch.Tensor, float]) -> "Expression":
         return Expression.__sub__(self, other)
 
-    def __rsub__(
-        self, other: Union[Expression, "Function", torch.Tensor, float]
-    ) -> "Expression":
+    def __rsub__(self, other: Union[NUMERIC_TERM, torch.Tensor, float]) -> "Expression":
         return Expression.__rsub__(self, other)
 
     def __neg__(self):
         return Expression(Expression.Operator.NEGATE, (self,))
 
-    def __mul__(
-        self, other: Union[Expression, "Function", torch.Tensor, float]
-    ) -> "Expression":
+    def __mul__(self, other: Union[NUMERIC_TERM, torch.Tensor, float]) -> "Expression":
         return Expression.__mul__(self, other)
 
-    def __rmul__(
-        self, other: Union[Expression, "Function", torch.Tensor, float]
-    ) -> "Expression":
+    def __rmul__(self, other: Union[NUMERIC_TERM, torch.Tensor, float]) -> "Expression":
         return Expression.__rmul__(self, other)
 
     def __truediv__(
-        self, other: Union[Expression, "Function", torch.Tensor, float]
+        self, other: Union[NUMERIC_TERM, torch.Tensor, float]
     ) -> "Expression":
         return Expression.__truediv__(self, other)
 
     def __rtruediv__(
-        self, other: Union[Expression, "Function", torch.Tensor, float]
+        self, other: Union[NUMERIC_TERM, torch.Tensor, float]
     ) -> "Expression":
         return Expression.__rtruediv__(self, other)
 
@@ -777,6 +856,7 @@ class Constant(Function):
         :param kwargs: External functions and values of variables
          for evaluating :class:`ExternalFunction` and :class:`ExternalVariable`
          objects.
+         Not used by :class:`Constant`.
         """
         return self.val
 
@@ -808,7 +888,8 @@ def as_expression(
 
 class ElementAccess(Function):
     """
-    Access an element of an expression or function.
+    Access an element of a tensor-valued (or vector/matrix-valued)
+    expression or function.
     """
 
     def __init__(
@@ -864,11 +945,19 @@ class ElementAccess(Function):
 @dataclass(frozen=True)
 class Probability(Function):
     """
-    A conditional probability of the form :math:`P(subject | condition)`.
+    A conditional probability of the form :math:`P(subject | condition)`,
+    where :math:`subject` and :math:`condition` are
+    :class:`Formula` or :class:`Inequality` instances.
+    It represents the probability that :code:`subject` is :code:`True`,
+    given that :code:`condition` is :code:`True`.
+
+    The condition may be :code:`None`, which yields an unconditional probability.
+
+    :class:`Probability` does not implement :code:`propagate_bounds`.
     """
 
-    subject: Formula | Inequality
-    condition: Formula | Inequality | None = None
+    subject: BOOL_TERM
+    condition: BOOL_TERM | None = None
 
     def __call__(self, **kwargs) -> torch.Tensor:
         """
@@ -1000,6 +1089,14 @@ class ExternalFunction(Function):
         `func_name(arg_names[0], ..., arg_names[-1])` from :code:`bounds`
         first, then tries to retrieve `func_name` from :code:´bounds`.
         One of these keys needs to be present in :code:`bounds`.
+
+        For example,
+        .. code-block::
+
+            fn = ExternalFunction("fn", "x", "y")
+            fn.propagate_bounds({"fn(x,y)": (-1.0, 1.0)})  # succeeds
+            fn.propagate_bounds({"fn": (-1.0, 1.0)})  # succeeds
+            fn.propagate_bounds({"x": (-1.0, 1.0), "y": (10.0, 11.0)})  # fails
         """
         with_args_name = self.func_name + "(" + ",".join(self.arg_names) + ")"
         if with_args_name in bounds:
@@ -1017,3 +1114,54 @@ class ExternalFunction(Function):
 
     def __repr__(self):
         return f"{self.func_name}(" + ", ".join(self.arg_names) + ")"
+
+
+@dataclass(frozen=True)
+class Compose(Function):
+    """
+    Composes a :class:`Function` with other
+    :class:`Function` or :class:`Expression` instances.
+
+    :class:`Compose` does not implement :code:`propagate_bounds`.
+    """
+
+    func: Function
+    args: dict[str, NUMERIC_TERM]
+
+    def __call__(self, **kwargs):
+        args = {name: expr(**kwargs) for name, expr in self.args.items()}
+        return self.func(**(kwargs | args))  # args has preference in |
+
+    def propagate_bounds(
+        self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
+    ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
+        raise NotImplementedError()
+
+    def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> MAIN_TYPES:
+        args = {name: expr.replace(substitutions) for name, expr in self.args.items()}
+        func = self.func.replace(substitutions)
+        return Compose(func, args)
+
+    def __repr__(self):
+        return (
+            f"{self.func.func_name}("
+            + ", ".join(f"{name}={repr(expr)}" for name, expr in self.args.items())
+            + ")"
+        )
+
+
+def compose(__func: Function, **kwargs: NUMERIC_TERM | torch.Tensor | float) -> Compose:
+    """
+    Composes a function with :class:`Expression` or :class:`Function`
+    instances.
+    Converts :class:`torch.Tensor` and :class:`float` arguments
+    to :class:`Constants`.
+    See :class:`Compose` for more information.
+
+    :param func: The function that is composed.
+    :param kwargs: The expressions, functions, and values to use
+     for the functions arguments.
+    :return: A :class:`Compose` instance.
+    """
+    kwargs = {key: as_expression(value) for key, value in kwargs.items()}
+    return Compose(__func, kwargs)

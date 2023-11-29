@@ -66,6 +66,33 @@ def test_construct_formula_6():
     print(formula)
 
 
+def test_construct_compose_1():
+    net = ExternalFunction("net", ("x", "a"))
+    y = ExternalVariable("y")
+    z = ExternalVariable("z")
+    formula = compose(net, x=y + z, a=12.0)
+    print(formula)
+
+
+def test_eval_compose_1():
+    f = ExternalFunction("f", ("x", "y", "a"))
+    z = ExternalVariable("z")
+    w = ExternalVariable("w")
+    expression = compose(f, x=z + w, y=2 * w - z, a=0.5)
+
+    def f_impl(x, y, a):
+        return a * x + y
+
+    z_val = torch.tensor([-5.0, 0.0, 1.0, 17.33])
+    w_val = torch.tensor([0.1, 0.2, -0.7, -1.4])
+
+    val = expression(f=f_impl, z=z_val, w=w_val)
+    assert torch.allclose(
+        val,
+        torch.tensor([2.75, 0.5, -2.25, -12.165]),
+    )
+
+
 def test_eval_formula_1():
     f = ExternalFunction("f", ("x",))
     expression = prob(f >= 0)
@@ -115,6 +142,33 @@ def test_replace_2():
     assert formula_2()
     formula_3 = formula_3.replace(subst)
     assert formula_3()
+
+
+def test_replace_compose():
+    net = ExternalFunction("N", ("x", "a"))
+    net2 = ExternalFunction("M", ("x", "a"))
+    y = ExternalVariable("y")
+    z = ExternalVariable("z")
+    w = ExternalVariable("w")
+
+    sub = -19 / w + 22.3
+    e = compose(net, x=7.5 * y / sub, a=-13.1)
+    assert "N" in repr(e)
+    assert "y" in repr(e)
+    assert "M" not in repr(e)
+    assert "z" not in repr(e)
+    assert "w" in repr(e)
+    assert "a" in repr(e)
+
+    e_ = e.replace({net: net2, y: z})
+    print(e)
+    print(e_)
+    assert "N" not in repr(e_)
+    assert "y" not in repr(e_)
+    assert "M" in repr(e_)
+    assert "z" in repr(e_)
+    assert "w" in repr(e_)
+    assert "a" in repr(e_)
 
 
 def test_propagate_bounds_1():
