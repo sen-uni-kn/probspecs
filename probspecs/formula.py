@@ -14,7 +14,7 @@ import torch
 from frozendict import frozendict
 
 from .trinary_logic import TrinaryLogic as TL
-from .utils import contains_unbracketed
+from .utils.string_utils import contains_unbracketed
 
 
 __all__ = [
@@ -1197,8 +1197,20 @@ class ExternalFunction(Function):
     func_name: str
     arg_names: tuple[str, ...]
 
+    def get_function(self, **externals) -> Callable:
+        """
+        Retrieve the concrete function for computing this
+        :class:`ExternalFunction` instance from a dictionary
+        of external function and variable values, as passed
+        to :code:`__call__`, for example.
+
+        :param externals: Values for external functions and variables.
+        :return: A callable for computing this external function.
+        """
+        return externals[self.func_name]
+
     def __call__(self, **kwargs) -> torch.Tensor | float:
-        func = kwargs[self.func_name]
+        func = self.get_function(**kwargs)
         func_args = (kwargs[name] for name in self.arg_names)
         return func(*func_args)
 
@@ -1251,11 +1263,18 @@ class ExplicitFunction(ExternalFunction):
     this function.
     """
 
-    func: Callable[[torch.Tensor | float, ...], torch.Tensor | float]
+    func: Callable[..., torch.Tensor | float]
 
-    def __call__(self, **kwargs):
-        func_args = (kwargs[name] for name in self.arg_names)
-        return self.func(*func_args)
+    def get_function(self, **externals) -> Callable:
+        """
+        Return the concrete function for computing this
+        :class:`ExternalFunction` instance.
+
+        :param externals: Values for external functions and variables.
+         Not used.
+        :return: :code:`self.func`.
+        """
+        return self.func
 
     def __repr__(self):
         return super().__repr__()

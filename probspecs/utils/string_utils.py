@@ -5,7 +5,7 @@
 def contains_unbracketed(string: str, symbols: tuple[str, ...]):
     """
     Returns whether a string contains certain symbols on the top-most
-    leven, that is, without being surrounded by brackets.
+    level, that is, without being surrounded by brackets.
 
     For example, :code:`a + b * (c - d)` contains :code:`+`
     and :code:`*` on the top-most level, but not :code:`-`

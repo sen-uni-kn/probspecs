@@ -2,57 +2,23 @@
 # Licensed under the MIT license
 from typing import Literal
 
-import scipy.stats
 import torch
-from torch import nn
 
 from probspecs import ExternalVariable, ExternalFunction, Probability
-from probspecs import TensorInputSpace, TabularInputSpace
-from probspecs import ToTensor
 from probspecs.bounds.probability_bounds import probability_bounds
 
 import pytest
 
 
-@pytest.fixture
-def first_scenario_1d():
-    # 1d input space of a normally distributed random variable
-    input_space = TensorInputSpace(
-        lbs=torch.tensor([-10.0]),
-        ubs=torch.tensor([10.0]),
-    )
-    distribution = ToTensor(scipy.stats.norm)
-
-    # binary classifier
-    # net produces the first class if the input is >= 0.0
-    # and the second class otherwise
-    net = nn.Sequential(nn.Linear(1, 2), nn.ReLU(), nn.Linear(2, 2))
-    with torch.no_grad():
-        net[0].weight.data = torch.tensor([[1.0], [-1.0]])
-        net[0].bias.data = torch.zeros(2)
-        net[2].weight.data = torch.eye(2)
-        net[2].bias.data = torch.zeros(2)
-
-    # binary classifier indicating if the input is >= 1.0
-    net2 = nn.Sequential(nn.Linear(1, 2), nn.ReLU(), nn.Linear(2, 2))
-    with torch.no_grad():
-        net2[0].weight.data = torch.tensor([[1.0], [-1.0]])
-        net2[0].bias.data = torch.tensor([-1.0, 1.0])
-        net2[2].weight.data = torch.eye(2)
-        net2[2].bias.data = torch.zeros(2)
-
-    return net, net2, input_space, distribution
-
-
 @pytest.mark.parametrize("split_heuristic", ["longest-edge"])
 def test_probability_bounds_1(
-    split_heuristic: Literal["longest-edge", "IBP"], first_scenario_1d
+    split_heuristic: Literal["longest-edge", "IBP"], verification_test_nets_1d
 ):
     """
     Test computing bounds on previously known probabilities
     """
     torch.manual_seed(251572694470273)
-    net, _, input_space, distribution = first_scenario_1d
+    net, _, input_space, distribution = verification_test_nets_1d
 
     net_func = ExternalFunction("net", ("x",))
     prob = Probability(net_func[:, 0] >= net_func[:, 1])
@@ -75,13 +41,13 @@ def test_probability_bounds_1(
 
 @pytest.mark.parametrize("split_heuristic", ["longest-edge"])
 def test_probability_bounds_conditional_1(
-    split_heuristic: Literal["longest-edge", "IBP"], first_scenario_1d
+    split_heuristic: Literal["longest-edge", "IBP"], verification_test_nets_1d
 ):
     """
     Test computing bounds on previously known probabilities
     """
     torch.manual_seed(249883610130386)
-    net, _, input_space, distribution = first_scenario_1d
+    net, _, input_space, distribution = verification_test_nets_1d
 
     x = ExternalVariable("x")
     net_func = ExternalFunction("net", ("x",))
@@ -105,13 +71,13 @@ def test_probability_bounds_conditional_1(
 
 @pytest.mark.parametrize("split_heuristic", ["longest-edge"])
 def test_probability_bounds_conditional_2(
-    split_heuristic: Literal["longest-edge", "IBP"], first_scenario_1d
+    split_heuristic: Literal["longest-edge", "IBP"], verification_test_nets_1d
 ):
     """
     Test computing bounds on previously known probabilities
     """
     torch.manual_seed(249883610130386)
-    net, net2, input_space, distribution = first_scenario_1d
+    net, net2, input_space, distribution = verification_test_nets_1d
 
     net_func = ExternalFunction("net", ("x",))
     net2_func = ExternalFunction("net2", ("x",))

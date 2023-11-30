@@ -21,7 +21,6 @@ from ..formula import (
     Formula,
 )
 from ..probability_distribution import ProbabilityDistribution
-from ..verifier import collect_requires_bounds
 from ..input_space import (
     InputSpace,
     TensorInputSpace,
@@ -29,6 +28,7 @@ from ..input_space import (
     CombinedInputSpace,
 )
 from .utils import construct_bounded_tensor
+from ..utils.formula_utils import collect_requires_bounds
 
 
 def probability_bounds(
@@ -111,10 +111,11 @@ def probability_bounds(
         for var, (lbs, ubs) in variable_bounds.items()
     }
 
-    requires_bounds = collect_requires_bounds(subj)
+    requires_bounds = set(collect_requires_bounds(subj))
     bounded_terms_substitution = {
-        term: ExternalVariable(str(term)) for term in requires_bounds
+        term: ExternalVariable(f"?{term}?") for term in requires_bounds
     }
+    subs_names = {term: var.name for term, var in bounded_terms_substitution.items()}
     subj_skeleton = subj.replace(bounded_terms_substitution)
 
     # make sure probability doesn't contain nested probabilities.
@@ -138,7 +139,7 @@ def probability_bounds(
 
     networks = {
         external.func_name: BoundedModule(
-            networks[external.func_name],
+            external.get_function(**networks),
             variable_bounds[external.arg_names[0]][0],  # lower bound of arg
             auto_lirpa_params.bound_ops,
         )
@@ -175,7 +176,7 @@ def probability_bounds(
         probability_mass=(1,),
     )
     intermediate_bounds = {
-        str(term): eval_bounds(term, variable_bounds) for term in requires_bounds
+        subs_names[term]: eval_bounds(term, variable_bounds) for term in requires_bounds
     }
     subj_skeleton_sat_fn = subj_skeleton.satisfaction_function
     sat_lb, sat_ub = subj_skeleton_sat_fn.propagate_bounds(**intermediate_bounds)
@@ -241,7 +242,8 @@ def probability_bounds(
             var: (lbs, variable_ubs[var]) for var, lbs in variable_lbs.items()
         }
         intermediate_bounds = {
-            str(term): eval_bounds(term, variable_bounds) for term in requires_bounds
+            subs_names[term]: eval_bounds(term, variable_bounds)
+            for term in requires_bounds
         }
         sat_lbs, sat_ubs = subj_skeleton_sat_fn.propagate_bounds(**intermediate_bounds)
         prob_mass = probability_mass(variable_bounds)
