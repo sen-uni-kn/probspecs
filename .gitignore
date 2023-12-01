@@ -1,3 +1,6 @@
+.datasets/
+.tensorboard/
+
 # PyCharm files
 .idea/*
 
