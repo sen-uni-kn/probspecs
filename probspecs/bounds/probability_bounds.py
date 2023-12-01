@@ -28,7 +28,11 @@ from ..input_space import (
     CombinedInputSpace,
 )
 from .utils import construct_bounded_tensor
-from ..utils.formula_utils import collect_requires_bounds
+from ..utils.formula_utils import (
+    collect_requires_bounds,
+    fuse_compositions,
+    make_explicit,
+)
 
 
 def probability_bounds(
@@ -103,7 +107,9 @@ def probability_bounds(
     variable_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]] = {
         var: domain.input_bounds for var, domain in variable_domains.items()
     }
-    subj, variable_bounds = apply_symbolic_bounds(probability.subject, variable_bounds)
+    subj = make_explicit(probability.subject, **networks)
+    subj, compose_subs = fuse_compositions(subj)
+    subj, variable_bounds = apply_symbolic_bounds(subj, variable_bounds)
 
     # add batch dimensions to all bounds
     variable_bounds = {
@@ -318,7 +324,7 @@ def apply_symbolic_bounds(
                 if is_simple(term):
                     simple_terms.append(term)
                 elif isinstance(term, Formula) and term.op is Formula.Operator.AND:
-                    top_level_conjuncts += term.operands
+                    top_level_conjuncts.append(term)
                 else:
                     remaining_terms.append(term)
     elif is_simple(formula):

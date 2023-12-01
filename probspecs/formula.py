@@ -1,5 +1,6 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
+import dataclasses
 import itertools
 from abc import ABC
 from enum import Enum, auto, unique
@@ -39,10 +40,10 @@ __all__ = [
 ]
 
 
-MAIN_TYPES = Union["Formula", "Inequality", "Expression", "Function"]
+TERM_TYPES = Union["Formula", "Inequality", "Expression", "Function"]
 BOOL_TERM = Union["Formula", "Inequality"]
 NUMERIC_TERM = Union["Expression", "Function"]
-PRECOMPUTED = dict[MAIN_TYPES, torch.Tensor | bool]
+PRECOMPUTED = dict[TERM_TYPES, torch.Tensor | bool]
 
 
 @dataclass(frozen=True)
@@ -180,7 +181,7 @@ class Formula:
             case _:
                 raise NotImplementedError()
 
-    def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> "Formula":
+    def replace(self, substitutions: dict[TERM_TYPES, TERM_TYPES]) -> "Formula":
         """
         Replaces formulae, inequalities, expressions, and functions
         inside this formula.
@@ -197,8 +198,8 @@ class Formula:
             )
 
     def collect(
-        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
-    ) -> tuple[MAIN_TYPES, ...]:
+        self, predicate: Callable[[TERM_TYPES], bool], continue_for_matches=False
+    ) -> tuple[TERM_TYPES, ...]:
         """
         Collects sub-terms that match a predicate.
 
@@ -230,7 +231,7 @@ class Formula:
     def __invert__(self) -> "Formula":
         return Formula(Formula.Operator.NOT, (self,))
 
-    def __repr__(self):
+    def __str__(self):
         if self.op == self.Operator.NOT:
             return f"{self.op}({self.operands[0]})"
 
@@ -377,7 +378,7 @@ class Inequality:
         else:
             return self.lhs - self.rhs
 
-    def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> "Inequality":
+    def replace(self, substitutions: dict[TERM_TYPES, TERM_TYPES]) -> "Inequality":
         """
         Replaces formulae, inequalities, expressions, and functions
         inside this inequality.
@@ -396,8 +397,8 @@ class Inequality:
             )
 
     def collect(
-        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
-    ) -> tuple[MAIN_TYPES, ...]:
+        self, predicate: Callable[[TERM_TYPES], bool], continue_for_matches=False
+    ) -> tuple[TERM_TYPES, ...]:
         """
         Collects sub-terms that match a predicate.
 
@@ -429,7 +430,7 @@ class Inequality:
     def __invert__(self) -> Formula:
         return Formula(Formula.Operator.NOT, (self,))
 
-    def __repr__(self):
+    def __str__(self):
         return f"{self.lhs} {self.op} {self.rhs}"
 
 
@@ -628,7 +629,7 @@ class Expression:
             case _:
                 raise NotImplementedError()
 
-    def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> "Expression":
+    def replace(self, substitutions: dict[TERM_TYPES, TERM_TYPES]) -> "Expression":
         """
         Replaces formulae, inequalities, expressions, and functions
         inside this expression.
@@ -645,8 +646,8 @@ class Expression:
             )
 
     def collect(
-        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
-    ) -> tuple[MAIN_TYPES, ...]:
+        self, predicate: Callable[[TERM_TYPES], bool], continue_for_matches=False
+    ) -> tuple[TERM_TYPES, ...]:
         """
         Collects sub-terms that match a predicate.
 
@@ -776,7 +777,7 @@ class Expression:
     ) -> "Function":
         return ElementAccess(self, item)
 
-    def __repr__(self):
+    def __str__(self):
         def convert_arg(operand):
             res = str(operand)
             if self.op in (
@@ -857,7 +858,7 @@ class Function(ABC):
         """
         raise NotImplementedError()
 
-    def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> MAIN_TYPES:
+    def replace(self, substitutions: dict[TERM_TYPES, TERM_TYPES]) -> TERM_TYPES:
         """
         Replaces formulae, inequalities, expressions, and functions
         inside this function.
@@ -868,8 +869,8 @@ class Function(ABC):
         raise NotImplementedError()
 
     def collect(
-        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
-    ) -> tuple[MAIN_TYPES, ...]:
+        self, predicate: Callable[[TERM_TYPES], bool], continue_for_matches=False
+    ) -> tuple[TERM_TYPES, ...]:
         """
         Collects sub-terms that match a predicate.
 
@@ -961,15 +962,15 @@ class Constant(Function):
     ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
         return self.val, self.val
 
-    def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> MAIN_TYPES:
+    def replace(self, substitutions: dict[TERM_TYPES, TERM_TYPES]) -> TERM_TYPES:
         return substitutions.get(self, self)
 
     def collect(
-        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
-    ) -> tuple[MAIN_TYPES, ...]:
+        self, predicate: Callable[[TERM_TYPES], bool], continue_for_matches=False
+    ) -> tuple[TERM_TYPES, ...]:
         return tuple(x for x in (self,) if predicate(x))
 
-    def __repr__(self):
+    def __str__(self):
         return f"{self.val}"
 
 
@@ -1019,15 +1020,15 @@ class ElementAccess(Function):
         source_lb, source_ub = self.source(**bounds)
         return source_lb[self.target_item], source_ub[self.target_item]
 
-    def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> MAIN_TYPES:
+    def replace(self, substitutions: dict[TERM_TYPES, TERM_TYPES]) -> TERM_TYPES:
         if self in substitutions:
             return substitutions[self]
         else:
             return ElementAccess(self.source.replace(substitutions), self.target_item)
 
     def collect(
-        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
-    ) -> tuple[MAIN_TYPES, ...]:
+        self, predicate: Callable[[TERM_TYPES], bool], continue_for_matches=False
+    ) -> tuple[TERM_TYPES, ...]:
         matches = []
         if predicate(self):
             matches.append(self)
@@ -1035,7 +1036,7 @@ class ElementAccess(Function):
             matches += self.source.collect(predicate, continue_for_matches)
         return tuple(matches)
 
-    def __repr__(self):
+    def __str__(self):
         source_str = str(self.source)
         if isinstance(self.source, Expression):
             source_str = f"({source_str})"
@@ -1098,7 +1099,7 @@ class Probability(Function):
     ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
         raise NotImplementedError()
 
-    def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> MAIN_TYPES:
+    def replace(self, substitutions: dict[TERM_TYPES, TERM_TYPES]) -> TERM_TYPES:
         if self in substitutions:
             return substitutions[self]
         else:
@@ -1110,8 +1111,8 @@ class Probability(Function):
             return Probability(self.subject.replace(substitutions), cond)
 
     def collect(
-        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
-    ) -> tuple[MAIN_TYPES, ...]:
+        self, predicate: Callable[[TERM_TYPES], bool], continue_for_matches=False
+    ) -> tuple[TERM_TYPES, ...]:
         matches = []
         if predicate(self):
             matches.append(self)
@@ -1121,7 +1122,7 @@ class Probability(Function):
                 matches += self.condition.collect(predicate, continue_for_matches)
         return tuple(matches)
 
-    def __repr__(self):
+    def __str__(self):
         if self.condition is not None:
             return f"P[{self.subject} | {self.condition}]"
         else:
@@ -1164,15 +1165,15 @@ class ExternalVariable(Function):
     ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
         return bounds[self.name]
 
-    def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> MAIN_TYPES:
+    def replace(self, substitutions: dict[TERM_TYPES, TERM_TYPES]) -> TERM_TYPES:
         return substitutions.get(self, self)
 
     def collect(
-        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
-    ) -> tuple[MAIN_TYPES, ...]:
+        self, predicate: Callable[[TERM_TYPES], bool], continue_for_matches=False
+    ) -> tuple[TERM_TYPES, ...]:
         return tuple(x for x in (self,) if predicate(x))
 
-    def __repr__(self):
+    def __str__(self):
         return self.name
 
 
@@ -1186,11 +1187,23 @@ class ExternalFunction(Function):
     the function arguments from a :code:`kwargs` dictionary,
     for example, when evaluating the function.
 
-    Example usage:
+    Example:
 
-        wrapper = ExternalFunction("net", "x")
+        wrapper = ExternalFunction("net", ("x",))
         formula = wrapper + 2.0 >= 5.0
         formula(net=actual_network, x=torch.rand(100, 10))
+
+    Explicit arguments
+    ------------------
+    :class:`ExternalFunction` allows fixing some arguments of the called function.
+    These arguments don't have to be supplied as keyword arguments when evaluating
+    the function.
+
+    Example:
+
+        f = ExternalFunction("f", ("x", "y"), explicit_args=frozendict({"y": -3.5}))
+        formula = f + 2.0 >= 5.0
+        formula(f=actual_function, x=torch.rand(100, 10))  # don't need to supply y
 
     """
 
@@ -1242,15 +1255,15 @@ class ExternalFunction(Function):
                 f"for {with_args_name}, nor for {self.func_name}."
             )
 
-    def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> MAIN_TYPES:
+    def replace(self, substitutions: dict[TERM_TYPES, TERM_TYPES]) -> TERM_TYPES:
         return substitutions.get(self, self)
 
     def collect(
-        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
-    ) -> tuple[MAIN_TYPES, ...]:
+        self, predicate: Callable[[TERM_TYPES], bool], continue_for_matches=False
+    ) -> tuple[TERM_TYPES, ...]:
         return tuple(x for x in (self,) if predicate(x))
 
-    def __repr__(self):
+    def __str__(self):
         return f"{self.func_name}(" + ", ".join(self.arg_names) + ")"
 
 
@@ -1276,8 +1289,8 @@ class ExplicitFunction(ExternalFunction):
         """
         return self.func
 
-    def __repr__(self):
-        return super().__repr__()
+    def __str__(self):
+        return super().__str__()
 
 
 @dataclass(frozen=True)
@@ -1301,7 +1314,7 @@ class Composition(Function):
     ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
         raise NotImplementedError()
 
-    def replace(self, substitutions: dict[MAIN_TYPES, MAIN_TYPES]) -> MAIN_TYPES:
+    def replace(self, substitutions: dict[TERM_TYPES, TERM_TYPES]) -> TERM_TYPES:
         if self in substitutions:
             return substitutions[self]
         else:
@@ -1312,24 +1325,25 @@ class Composition(Function):
             return Composition(func, frozendict(args))
 
     def collect(
-        self, predicate: Callable[[MAIN_TYPES], bool], continue_for_matches=False
-    ) -> tuple[MAIN_TYPES, ...]:
+        self, predicate: Callable[[TERM_TYPES], bool], continue_for_matches=False
+    ) -> tuple[TERM_TYPES, ...]:
         matches = []
         if predicate(self):
             matches.append(self)
         if len(matches) == 0 or continue_for_matches:
+            matches += self.func.collect(predicate, continue_for_matches)
             for child in self.args.values():
                 matches += child.collect(predicate, continue_for_matches)
         return tuple(matches)
 
-    def __repr__(self):
+    def __str__(self):
         if isinstance(self.func, ExternalFunction):
             func_str = self.func.func_name
         else:
             func_str = f"({self.func})"
         return (
             f"{func_str}("
-            + ", ".join(f"{name}={repr(expr)}" for name, expr in self.args.items())
+            + ", ".join(f"{name}={expr}" for name, expr in self.args.items())
             + ")"
         )
 

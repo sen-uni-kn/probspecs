@@ -3,31 +3,27 @@
 import os
 from enum import Enum, auto, unique
 from math import ceil
-from typing import Any, Callable
+from typing import Callable, Literal
 from time import time
 import multiprocessing as mp
 
 import torch
-from frozendict import frozendict
 
 from .bounds.auto_lirpa_params import AutoLiRPAParams
 from .probability_distribution import ProbabilityDistribution
 from .input_space import InputSpace
 from .formula import (
-    Composition,
     Formula,
     Probability,
     Function,
     Inequality,
-    Expression,
     ExternalFunction,
     ExternalVariable,
-    ExplicitFunction,
 )
 from .trinary_logic import TrinaryLogic as TL
 from .bounds.probability_bounds import probability_bounds
 from .bounds.network_bounds import network_bounds
-from .utils.formula_utils import collect_requires_bounds
+from .utils.formula_utils import collect_requires_bounds, fuse_compositions
 
 
 @unique
@@ -59,6 +55,9 @@ def verify(
     external_vars_distributions: dict[str, ProbabilityDistribution],
     workers: tuple[str | torch.device, ...] | None = None,
     timeout: float | None = None,
+    batch_size: int = 128,
+    auto_lirpa_params: AutoLiRPAParams = AutoLiRPAParams(method="CROWN"),
+    split_heuristic: Literal["IBP", "longest-edge"] = "longest-edge",
 ) -> tuple[VerificationStatus, dict[Function, tuple[torch.Tensor, torch.Tensor]]]:
     """
     Verifies a formula.
@@ -83,6 +82,9 @@ def verify(
      The length of this tuple determines the number of workers.
     :param timeout: The timeout for verification.
      When verification exceeds this time budget, it is aborted.
+    :param batch_size: The batch size to use for computing bounds.
+    :param auto_lirpa_params: AutoLiRPA configuration for computing bounds
+    :param split_heuristic: Split heuristic for computing bounds.
     :return: The status of verification and a verification witness.
      The verification witness is a set of bounds for functions in :code:`formula`
      that allows to prove/disprove :code:`formula`.
@@ -93,7 +95,7 @@ def verify(
 
     # Replace compositions of functions by a single function computing
     # the composition
-    formula, compose_substitutions = fuse_compositions(formula)
+    formula, compose_subs = fuse_compositions(formula)
 
     requires_bounds = collect_requires_bounds(formula)
     bounded_terms_substitution = {
@@ -121,6 +123,9 @@ def verify(
                     "external_vars_distributions": external_vars_distributions,
                     "results_queue": bounds_queue,
                     "device": worker_device,
+                    "batch_size": batch_size,
+                    "auto_lirpa_params": auto_lirpa_params,
+                    "split_heuristic": split_heuristic,
                 },
             )
             worker_processes.append(worker)
@@ -148,7 +153,10 @@ def verify(
             outcome = top_level_formula.propagate_bounds(**best_bounds)
 
         terminate_workers()
-        best_bounds = {term: best_bounds[term_subs[term]] for term in requires_bounds}
+        best_bounds = {
+            compose_subs.get(term, term): best_bounds[term_subs[term]]
+            for term in requires_bounds
+        }
         return VerificationStatus.from_(outcome), best_bounds
     finally:
         if len(worker_processes) > 0:
@@ -164,6 +172,9 @@ def _compute_bounds_worker(
     external_vars_distributions: dict[str, ProbabilityDistribution],
     results_queue: mp.Queue,
     device: torch.device | str,
+    batch_size: int,
+    auto_lirpa_params: AutoLiRPAParams,
+    split_heuristic: Literal["IBP", "longest-edge"],
 ):
     """
     A worker for computing bounds on one or multiple target terms.
@@ -184,6 +195,9 @@ def _compute_bounds_worker(
     external_callables = {
         name: e for name, e in externals.items() if isinstance(e, Callable)
     }
+    for external in external_callables.values():
+        if isinstance(external, torch.nn.Module):
+            external.to(device)
 
     def get_bounds_gen(term: Function):
         if isinstance(term, Probability):
@@ -192,9 +206,10 @@ def _compute_bounds_worker(
                 networks=external_callables,
                 variable_domains=external_vars_domains,
                 variable_distributions=external_vars_distributions,
-                auto_lirpa_params=AutoLiRPAParams(method="CROWN"),  # FIXME
-                split_heuristic="longest-edge",  # FIXME
-            )  # TODO: further config
+                batch_size=batch_size,
+                auto_lirpa_params=auto_lirpa_params,
+                split_heuristic=split_heuristic,
+            )
         elif isinstance(term, ExternalFunction):
             network = term.get_function(**externals)
             if len(term.arg_names) != 1:
@@ -205,78 +220,16 @@ def _compute_bounds_worker(
             else:
                 arg_name = term.arg_names[0]
                 arg_bounds = external_vars_domains[arg_name].input_bounds
-            return network_bounds(network, input_bounds=arg_bounds)
+            return network_bounds(
+                network,
+                input_bounds=arg_bounds,
+                batch_size=batch_size,
+                auto_lirpa_params=auto_lirpa_params,
+                split_heuristic=split_heuristic,
+            )
 
     bounds_gens = [get_bounds_gen(term) for term in target_terms]
     while True:
         for term, bounds_gen in zip(target_terms, bounds_gens):
             new_bounds = next(bounds_gen)
             results_queue.put((term, new_bounds))
-
-
-def fuse_compositions(
-    term: Formula | Inequality | Expression | Function,
-) -> tuple[
-    Formula | Inequality | Expression | Function, dict[Composition, ExplicitFunction]
-]:
-    """
-    Replaces all function compositions (:class:`Compose` instances)
-    with new external functions that evaluate the composition.
-
-    :param term: The term in which to fuse the compositions.
-    :return:
-     - A new term with the same top-level structure, but compositions
-       replaced by new external functions.
-     - A mapping from compositions to the new external functions they
-       are replaced with.
-    """
-    compositions = term.collect(lambda sub: isinstance(sub, Composition))
-
-    # Fuse sub-compositions first to simplify collecting arguments.
-    # Reason: for compositions inside compositions the arguments of the
-    # Compose.func attributes may not be collected as arguments of the
-    # function with which the top composition is replaced.
-    compositions = {
-        compose: Composition(
-            compose.func,
-            frozendict(
-                {arg: fuse_compositions(expr)[0] for arg, expr in compose.args.items()}
-            ),
-        )
-        for compose in compositions
-    }
-
-    def replacement(compose: Composition) -> ExternalFunction:
-        def is_external(term_):
-            return isinstance(term_, ExternalVariable | ExternalFunction)
-
-        def get_args(external: ExternalVariable | ExternalFunction):
-            if isinstance(external, ExternalVariable):
-                return (external.name,)
-            elif isinstance(external, ExternalFunction):
-                if isinstance(external, ExplicitFunction):
-                    return external.arg_names
-                else:
-                    return (external.func_name,) + external.arg_names
-
-        externals = compose.collect(is_external)
-        compose_args = sum((get_args(e) for e in externals), ())
-        if isinstance(compose.func, ExternalFunction) and not isinstance(
-            compose.func, ExplicitFunction
-        ):
-            compose_args += (compose.func.func_name,)
-        compose_args = tuple(set(compose_args))
-
-        def eval_compose(*args):
-            kwargs = {
-                name: value for name, value in zip(compose_args, args, strict=True)
-            }
-            return compose(**kwargs)
-
-        return ExplicitFunction(f"?{compose}?", compose_args, eval_compose)
-
-    substitution = {
-        orig_compose: replacement(fused_compose)
-        for orig_compose, fused_compose in compositions.items()
-    }
-    return term.replace(substitution), substitution

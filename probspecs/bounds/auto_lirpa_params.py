@@ -17,7 +17,7 @@ class AutoLiRPAParams:
        More details in the :func:`auto_LiRPA.BoundedModule` documentation.
     """
 
-    method: str = "alpha-CROWN"
+    method: str = "CROWN"
     bound_ops: dict | frozendict = frozendict(
         {"optimize_bound_args": frozendict({"iteration": 20, "lr_alpha": 0.1})}
     )
