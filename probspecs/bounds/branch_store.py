@@ -78,6 +78,8 @@ class BranchStore:
         for key, values in values.items():
             if values.ndim < self.__data[key].ndim:
                 values = values.unsqueeze(0)  # add batch dimension
+            if key == "probability_mass":
+                print(key, values)
             self.__data[key] = torch.vstack([self.__data[key], values])
 
     def extend(self, other: "BranchStore"):

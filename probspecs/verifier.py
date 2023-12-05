@@ -1,6 +1,7 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
 import os
+import sys
 from enum import Enum, auto, unique
 from math import ceil
 from typing import Callable, Literal
@@ -23,7 +24,11 @@ from .formula import (
 from .trinary_logic import TrinaryLogic as TL
 from .bounds.probability_bounds import probability_bounds
 from .bounds.network_bounds import network_bounds
-from .utils.formula_utils import collect_requires_bounds, fuse_compositions
+from .utils.formula_utils import (
+    collect_requires_bounds,
+    fuse_compositions,
+    make_explicit,
+)
 
 
 @unique
@@ -93,16 +98,32 @@ def verify(
         # TODO: use GPUs by default
         workers = ("cpu",) * len(os.sched_getaffinity(0))
 
-    # Replace compositions of functions by a single function computing
-    # the composition
+    # Replace all given externals by ExplicitFunctions/Constants
+    formula, make_explicit_subs = make_explicit(formula, **externals)
+    # Replace compositions of functions by a single function computing the composition
     formula, compose_subs = fuse_compositions(formula)
+
+    make_explicit_subs_reverse = {
+        make_explicit_subs[term]: term for term in make_explicit_subs
+    }
+    compose_subs_reverse = {compose_subs[term]: term for term in compose_subs}
+
+    def original_term(term):
+        before_fuse_compose = term.replace(compose_subs_reverse)
+        orig = before_fuse_compose.replace(make_explicit_subs_reverse)
+        return orig
 
     requires_bounds = collect_requires_bounds(formula)
     bounded_terms_substitution = {
         term: ExternalVariable(f"?{term}?") for term in requires_bounds
     }
-    term_subs = {term: var.name for term, var in bounded_terms_substitution.items()}
-    top_level_formula = formula.replace(bounded_terms_substitution)
+    # Use strings as keys because ExplicitFunction objects that are exchanged between
+    # processes are not necessarily equal (due to the callables not being equal).
+    # However, the string representations are equal.
+    term_subs = {
+        str(term): var.name for term, var in bounded_terms_substitution.items()
+    }
+    formula_skeleton = formula.replace(bounded_terms_substitution)
 
     bounds_queue = mp.SimpleQueue()
     worker_processes = []
@@ -136,25 +157,39 @@ def verify(
                 worker_.terminate()
 
         start_time = time()
-        best_bounds = {}
-        # fetch bounds until we have a bound for every term in requires_bounds
-        while len(best_bounds) < len(requires_bounds):
-            term, new_bounds = bounds_queue.get()
-            best_bounds[term_subs[term]] = new_bounds
 
-        outcome = top_level_formula.propagate_bounds(**best_bounds)
-        while outcome == TL.UNKNOWN:
+        def check_timeout():
             if timeout is not None and time() > start_time + timeout:
                 terminate_workers()
                 raise VerificationTimeout()
 
-            term, new_bounds = bounds_queue.get()
-            best_bounds[term_subs[term]] = new_bounds
-            outcome = top_level_formula.propagate_bounds(**best_bounds)
+        def new_result():
+            new_res = bounds_queue.get()
+            if isinstance(new_res, Exception):
+                terminate_workers()
+                raise RuntimeError(
+                    "Subprocess for computing bounds crashed."
+                ) from new_res
+            else:
+                return new_res
+
+        best_bounds = {}
+        # fetch bounds until we have a bound for every term in requires_bounds
+        while len(best_bounds) < len(requires_bounds):
+            check_timeout()
+            term_key, new_bounds = new_result()
+            best_bounds[term_subs[term_key]] = new_bounds
+
+        outcome = formula_skeleton.propagate_bounds(**best_bounds)
+        while outcome == TL.UNKNOWN:
+            check_timeout()
+            term_key, new_bounds = new_result()
+            best_bounds[term_subs[term_key]] = new_bounds
+            outcome = formula_skeleton.propagate_bounds(**best_bounds)
 
         terminate_workers()
         best_bounds = {
-            compose_subs.get(term, term): best_bounds[term_subs[term]]
+            original_term(term): best_bounds[term_subs[str(term)]]
             for term in requires_bounds
         }
         return VerificationStatus.from_(outcome), best_bounds
@@ -192,44 +227,49 @@ def _compute_bounds_worker(
     :param results_queue: The :code:`multiprocessing.Queue` for posting results.
     :param device: Which device to use for computing bounds.
     """
-    external_callables = {
-        name: e for name, e in externals.items() if isinstance(e, Callable)
-    }
-    for external in external_callables.values():
-        if isinstance(external, torch.nn.Module):
-            external.to(device)
+    try:
+        external_callables = {
+            name: e for name, e in externals.items() if isinstance(e, Callable)
+        }
+        for external in external_callables.values():
+            if isinstance(external, torch.nn.Module):
+                external.to(device)
 
-    def get_bounds_gen(term: Function):
-        if isinstance(term, Probability):
-            return probability_bounds(
-                probability=term,
-                networks=external_callables,
-                variable_domains=external_vars_domains,
-                variable_distributions=external_vars_distributions,
-                batch_size=batch_size,
-                auto_lirpa_params=auto_lirpa_params,
-                split_heuristic=split_heuristic,
-            )
-        elif isinstance(term, ExternalFunction):
-            network = term.get_function(**externals)
-            if len(term.arg_names) != 1:
-                raise ValueError(
-                    f"Currently, only external functions with a single argument "
-                    f"are supported. Function has multiple arguments: {term}"
+        def get_bounds_gen(term: Function):
+            if isinstance(term, Probability):
+                return probability_bounds(
+                    probability=term,
+                    networks=external_callables,
+                    variable_domains=external_vars_domains,
+                    variable_distributions=external_vars_distributions,
+                    batch_size=batch_size,
+                    auto_lirpa_params=auto_lirpa_params,
+                    split_heuristic=split_heuristic,
                 )
-            else:
-                arg_name = term.arg_names[0]
-                arg_bounds = external_vars_domains[arg_name].input_bounds
-            return network_bounds(
-                network,
-                input_bounds=arg_bounds,
-                batch_size=batch_size,
-                auto_lirpa_params=auto_lirpa_params,
-                split_heuristic=split_heuristic,
-            )
+            elif isinstance(term, ExternalFunction):
+                network = term.get_function(**externals)
+                if len(term.arg_names) != 1:
+                    raise ValueError(
+                        f"Currently, only external functions with a single argument "
+                        f"are supported. Function has multiple arguments: {term}"
+                    )
+                else:
+                    arg_name = term.arg_names[0]
+                    arg_bounds = external_vars_domains[arg_name].input_bounds
+                return network_bounds(
+                    network,
+                    input_bounds=arg_bounds,
+                    batch_size=batch_size,
+                    auto_lirpa_params=auto_lirpa_params,
+                    split_heuristic=split_heuristic,
+                )
 
-    bounds_gens = [get_bounds_gen(term) for term in target_terms]
-    while True:
-        for term, bounds_gen in zip(target_terms, bounds_gens):
-            new_bounds = next(bounds_gen)
-            results_queue.put((term, new_bounds))
+        target_term_keys = [str(term) for term in target_terms]
+        bounds_gens = [get_bounds_gen(term) for term in target_terms]
+        while True:
+            for term_key, bounds_gen in zip(target_term_keys, bounds_gens):
+                new_bounds = next(bounds_gen)
+                results_queue.put((term_key, new_bounds))
+    except Exception as e:
+        results_queue.put(e)
+        sys.exit(1)

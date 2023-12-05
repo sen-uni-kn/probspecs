@@ -1,9 +1,13 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
 from abc import abstractmethod
+from math import prod
 from typing import Protocol, runtime_checkable
 
 import torch
+import numpy as np
+import scipy.integrate
+from frozendict import frozendict
 
 
 @runtime_checkable
@@ -13,29 +17,95 @@ class ProbabilityDistribution(Protocol):
     """
 
     @abstractmethod
-    def cdf(self, x: torch.Tensor) -> torch.Tensor:
+    def probability(
+        self, event: tuple[torch.Tensor, torch.Tensor]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
-        The cumulative distribution function of the probability distribution.
-        Supports batch processing.
+        Computes a lower and upper bound of the probability mass within
+        a hyper-rectanglar set (an event).
+        Supports batch processing (event may be a batch of hyper-rectangles).
 
-        :param x: Where to evaluate the cumulative distribution function.
-          This may be a batched tensor.
-        :return: Cumulative distribution function evaluated at x.
+        :param event: The hyper-rectangle whose probability mass is to be bounded.
+          The hyper-rectangle is provided as the "bottom-left" corner
+          and the "top-right" corner, or, more generally, the smallest element
+          of the hyper-rectangle in all dimensions and the largest element of
+          the hyper-rectangle in all dimensions.
+          The :code:`event` may also be a batch of hyper-rectangles.
+          Generally, expect both the lower-left corner tensor and the
+          upper-right corner tensors to have a batch dimension-
+        :return: A lower bound on the probability mass within the
+         provided hyper-rectangle and an upper bound on this probability.
+         If :code:`event` is batched, both lower and upper bound are vectors.
         """
         raise NotImplementedError()
 
 
-class ToTensor(ProbabilityDistribution):
+class Distribution1d(ProbabilityDistribution):
     """
-    Wraps the values returned by another probability distribution in tensors.
+    Wraps a continuous 1d probability distribution that allows evaluating
+    the cumulative distribution function (cdf) as a probability
+    distribution.
+    The probability mass within an interval :math:`[a, b]` is computed
+    as :math:`cdf(b) - cdf(a)`.
+    This class assumes that the :code:´cdf` function computes the
+    exact value of the cdf (up to floating point error).
 
-    Can be used, for example to leverage scipy distributions.
-    Example: :code:`ToTensor(scipy.stats.norm)`
+    If underlying probability distribution returns numpy arrays instead
+    of tensors (for example, scipy.stats distributions), the result
+    is wrapped as a tensor.
+    Consequently, this class can be used to leverage scipy distributions.
+    Example: :code:`Distribution1d(scipy.stats.norm)`
     """
 
     def __init__(self, distribution):
         self.__distribution = distribution
 
-    def cdf(self, x: torch.Tensor) -> torch.Tensor:
-        value = self.__distribution.cdf(x)
-        return torch.as_tensor(value)
+    def probability(
+        self, event: tuple[torch.Tensor, torch.Tensor]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        lower_left, upper_right = event
+        orig_device = lower_left.device
+        lower_left = lower_left.detach().cpu()
+        upper_right = upper_right.detach().cpu()
+        cdf_high = self.__distribution.cdf(upper_right)
+        cdf_low = self.__distribution.cdf(lower_left)
+        prob = cdf_high - cdf_low
+        prob = torch.as_tensor(prob, device=orig_device)
+        return prob, prob
+
+
+class MultidimensionalIndependent(ProbabilityDistribution):
+    """
+    Wraps several independent 1d probability distributions into a
+    multivariate probability distribution.
+
+    This class flattens all inputs, such that it can work with arbitrarily
+    shaped inputs.
+    """
+
+    def __init__(self, *distributions, input_shape):
+        """
+        Creates a new :class:`MultidimensionalIndependent` object.
+
+        :param distributions: The probability distributions of the different
+         dimensions.
+        :param input_shape: The shape of the inputs supplied to the probability
+         method. The input shape is used for determining whether the input is batched.
+        """
+        self.__distributions = distributions
+        self.__input_shape = input_shape
+
+    def probability(
+        self, event: tuple[torch.Tensor, torch.Tensor]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        lower_left, upper_right = event
+        # add batch dimension if not already present
+        lower_left = lower_left.reshape(-1, *self.__input_shape).flatten(1)
+        upper_right = upper_right.reshape(-1, *self.__input_shape).flatten(1)
+
+        probability_bounds = (
+            self.__distributions[i].probability((lower_left[:, i], upper_right[:, i]))
+            for i in range(lower_left.size(1))
+        )
+        probability_lbs, probability_ubs = zip(*probability_bounds)
+        return prod(probability_lbs), prod(probability_ubs)

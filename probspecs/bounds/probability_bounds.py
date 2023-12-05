@@ -19,6 +19,7 @@ from ..formula import (
     Constant,
     Inequality,
     Formula,
+    ElementAccess,
 )
 from ..probability_distribution import ProbabilityDistribution
 from ..input_space import (
@@ -107,8 +108,8 @@ def probability_bounds(
     variable_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]] = {
         var: domain.input_bounds for var, domain in variable_domains.items()
     }
-    subj = make_explicit(probability.subject, **networks)
-    subj, compose_subs = fuse_compositions(subj)
+    subj, _ = make_explicit(probability.subject, **networks)
+    subj, _ = fuse_compositions(subj)
     subj, variable_bounds = apply_symbolic_bounds(subj, variable_bounds)
 
     # add batch dimensions to all bounds
@@ -169,24 +170,26 @@ def probability_bounds(
 
     def probability_mass(
         var_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]]
-    ) -> torch.Tensor:
-        return prod(
-            variable_distributions[var].cdf(var_ubs)
-            - variable_distributions[var].cdf(var_lbs)
-            for var, (var_lbs, var_ubs) in var_bounds.items()
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        prob_bounds = (
+            variable_distributions[var].probability(bounds)
+            for var, bounds in var_bounds.items()
         )
+        prob_lbs, prob_ubs = zip(*prob_bounds)
+        return prod(prob_lbs).reshape(-1, 1), prod(prob_ubs).reshape(-1, 1)
 
     branches = BranchStore(
         in_shape=full_input_space.input_shape,
         out_shape=(1,),  # a satisfaction score
-        probability_mass=(1,),
+        probability_mass_lb=(1,),
+        probability_mass_ub=(1,),
     )
     intermediate_bounds = {
         subs_names[term]: eval_bounds(term, variable_bounds) for term in requires_bounds
     }
     subj_skeleton_sat_fn = subj_skeleton.satisfaction_function
     sat_lb, sat_ub = subj_skeleton_sat_fn.propagate_bounds(**intermediate_bounds)
-    prob_mass = probability_mass(variable_bounds)
+    prob_mass_lb, prob_mass_ub = probability_mass(variable_bounds)
     in_lbs = {var: lbs for var, (lbs, _) in variable_bounds.items()}
     in_ubs = {var: ubs for var, (_, ubs) in variable_bounds.items()}
     branches.append(
@@ -194,33 +197,39 @@ def probability_bounds(
         in_ubs=full_input_space.combine(**in_ubs),
         out_lbs=sat_lb,
         out_ubs=sat_ub,
-        probability_mass=prob_mass,
+        probability_mass_lb=prob_mass_lb,
+        probability_mass_ub=prob_mass_ub,
     )
 
     def eval_probability_bounds() -> tuple[torch.Tensor, torch.Tensor]:
         # satisfaction lower bound > 0 => sufficient condition for satisfaction
         prob_lb = torch.sum(
-            torch.where(branches.out_lbs > 0, branches.probability_mass, 0)
+            torch.where(branches.out_lbs > 0, branches.probability_mass_lb, 0)
         )
         # satisfaction upper bound > 0 => necessary condition for satisfaction
         # the branches with satisfaction upper bound > 0 are those for which
         # satisfaction hasn't yet been disproven.
         prob_ub = torch.sum(
-            torch.where(branches.out_ubs > 0, branches.probability_mass, 0)
+            torch.where(branches.out_ubs > 0, branches.probability_mass_ub, 0)
         )
         return prob_lb, prob_ub
 
     best_lb, best_ub = eval_probability_bounds()
     yield (best_lb, best_ub)
 
-    if len(networks) == 0:
+    # Usually, best_lb == best_ub occurs subj was enforced completely
+    # by bounds (see apply_symbolic_bounds)
+    if best_lb == best_ub:
         # No need to refine bounds in this case
         while True:
             yield (best_lb, best_ub)
 
     while True:
         # 1. select a batch of branches
-        branches.sort(branches.probability_mass.flatten(), descending=True)
+        estimated_prob_mass = (
+            branches.probability_mass_ub + branches.probability_mass_lb
+        ) / 2.0
+        branches.sort(estimated_prob_mass.flatten(), descending=True)
         selected_branches = branches.pop(batch_size)
 
         # 2. select dimensions to split
@@ -252,7 +261,7 @@ def probability_bounds(
             for term in requires_bounds
         }
         sat_lbs, sat_ubs = subj_skeleton_sat_fn.propagate_bounds(**intermediate_bounds)
-        prob_mass = probability_mass(variable_bounds)
+        prob_mass_lb, prob_mass_ub = probability_mass(variable_bounds)
 
         # 5. update branches
         branches.append(
@@ -260,7 +269,8 @@ def probability_bounds(
             in_ubs=new_ubs,
             out_lbs=sat_lbs.unsqueeze(1),
             out_ubs=sat_ubs.unsqueeze(1),
-            probability_mass=prob_mass,
+            probability_mass_lb=prob_mass_lb,
+            probability_mass_ub=prob_mass_ub,
         )
 
         # 6. report new lower/upper bound on probability
@@ -297,21 +307,30 @@ def apply_symbolic_bounds(
     """
 
     def is_simple(term_: Formula | Inequality) -> bool:
-        return (
-            isinstance(term_, Inequality)
-            and (
-                (
-                    isinstance(term_.lhs, ExternalVariable)
-                    and isinstance(term_.rhs, Constant)
+        """
+        Simple terms: x >= c, x <= c, c >= x, c <= x,
+        x[...] >= c, x[...] <= c, c >= x[...], c <= x[...]
+        where c is a Constant and x is an ExternalVariable.
+        """
+        if isinstance(term_, Inequality) and term_.op in (
+            Inequality.Operator.LESS_EQUAL,
+            Inequality.Operator.GREATER_EQUAL,
+        ):
+            if isinstance(term_.lhs, Constant):
+                const_ = term_.lhs
+                other_ = term_.rhs
+            elif isinstance(term_.rhs, Constant):
+                const_ = term_.rhs
+                other_ = term_.lhs
+            else:
+                const_ = other_ = None
+
+            if const_ is not None:
+                return isinstance(other_, ExternalVariable) or (
+                    isinstance(other_, ElementAccess)
+                    and isinstance(other_.source, ExternalVariable)
                 )
-                or (
-                    isinstance(term_.rhs, ExternalVariable)
-                    and isinstance(term_.lhs, Constant)
-                )
-            )
-            and term_.op
-            in (Inequality.Operator.LESS_EQUAL, Inequality.Operator.GREATER_EQUAL)
-        )
+        return False
 
     if isinstance(formula, Formula) and formula.op is Formula.Operator.AND:
         simple_terms = []
@@ -335,15 +354,33 @@ def apply_symbolic_bounds(
 
     new_bounds = dict(variable_bounds)
     for ineq in simple_terms:
-        var = ineq.lhs if isinstance(ineq.lhs, ExternalVariable) else ineq.rhs
         const = ineq.lhs if isinstance(ineq.lhs, Constant) else ineq.rhs
+        other = ineq.rhs if isinstance(ineq.lhs, Constant) else ineq.lhs
 
-        lb, ub = variable_bounds[var.name]
-        if ineq.op is Inequality.Operator.LESS_EQUAL:
-            ub = torch.clamp(ub, max=const.val)
-        else:  # var >= const
-            lb = torch.clamp(lb, min=const.val)
-        new_bounds[var.name] = (lb, ub)
+        if isinstance(other, ExternalVariable):
+            var = other
+            lb, ub = new_bounds[var.name]
+            if ineq.op is Inequality.Operator.LESS_EQUAL:
+                ub = torch.clamp(ub, max=const.val)
+            else:  # var >= const
+                lb = torch.clamp(lb, min=const.val)
+            new_bounds[var.name] = (lb, ub)
+        elif isinstance(other, ElementAccess):
+            var = other.source
+            lb, ub = new_bounds[var.name]
+            # deal with missing batch dimensions in bounds
+            item = other.target_item[1:]
+            lb_item = lb[item]
+            ub_item = ub[item]
+            if ineq.op is Inequality.Operator.LESS_EQUAL:
+                ub_item = torch.clamp(ub_item, max=const.val)
+            else:  # var >= const
+                lb_item = torch.clamp(lb_item, min=const.val)
+            lb[item] = lb_item
+            ub[item] = ub_item
+            new_bounds[var.name] = (lb, ub)
+        else:
+            raise NotImplementedError()
 
     remaining_terms = Formula(Formula.Operator.AND, tuple(remaining_terms))
     return remaining_terms, new_bounds

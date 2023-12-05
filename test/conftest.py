@@ -6,8 +6,11 @@ from torch import nn
 import numpy as np
 from pathlib import Path
 
-from probspecs import TensorInputSpace, ProbabilityDistribution
-from probspecs import ToTensor
+from probspecs import TensorInputSpace
+from probspecs.probability_distribution import (
+    Distribution1d,
+    MultidimensionalIndependent,
+)
 
 import pytest
 
@@ -37,7 +40,7 @@ def verification_test_nets_1d():
         lbs=torch.tensor([-10.0]),
         ubs=torch.tensor([10.0]),
     )
-    distribution = ToTensor(scipy.stats.norm)
+    distribution = Distribution1d(scipy.stats.norm)
 
     # binary classifier
     # net produces the first class if the input is >= 0.0
@@ -61,38 +64,53 @@ def verification_test_nets_1d():
 
 
 @pytest.fixture
+def verification_test_compose():
+    """
+    A fixture supplying:
+     - A 2d tensor input space with bounds :math:`[-10, 10]^2`
+     - A combination of two independent standard normal distributions for the
+       2d input space
+     - A FCNN producing 100d outputs.
+     - A FCNN consuming 100d inputs and prodicing a 1d output.
+    """
+    torch.manual_seed(554549888315709)
+
+    input_space = TensorInputSpace(
+        lbs=torch.full((2,), fill_value=-10.0),
+        ubs=torch.full((2,), fill_value=10.0),
+    )
+    distrs = [Distribution1d(scipy.stats.norm) for i in range(2)]
+    distribution = MultidimensionalIndependent(*distrs, input_shape=(2,))
+
+    generator = nn.Sequential(
+        nn.Linear(2, 10, bias=False),
+        nn.ReLU(),
+        nn.Linear(10, 100, bias=False),
+    )
+    consumer = nn.Sequential(nn.Linear(100, 10), nn.ReLU(), nn.Linear(10, 1))
+    return input_space, distribution, generator, consumer
+
+
+@pytest.fixture
 def verification_test_mnist_gen(resource_dir):
     """
     A fixture supplying a
-     - A 1d tensor input space with bounds [-10.0, 10.0]
-     - A multivariate normal distribution for a (1, 4, 1, 1) input space
+     - A 1d tensor input space with bounds [-3.0, 3.0]
+     - A combination of independent normal distributions for a (1, 4, 1, 1) input space
      - An MNIST generator network trained as part of a GAN
     """
     input_space = TensorInputSpace(
-        lbs=torch.full((4, 1, 1), fill_value=-10.0),
-        ubs=torch.full((4, 1, 1), fill_value=10.0),
+        lbs=torch.full((4, 1, 1), fill_value=-3.0),
+        ubs=torch.full((4, 1, 1), fill_value=3.0),
     )
 
-    class Distribution(ProbabilityDistribution):
-        """Converts a scipy multivariate normal to tensors"""
-
-        def __init__(self):
-            mean = np.zeros(4)
-            cov = np.random.rand(4, 4) * 0.5
-            cov = cov.T @ cov  # now cov is positive semi-definite
-            self.distr = scipy.stats.multivariate_normal(mean=mean, cov=cov)
-            self.shape = (1, 4, 1, 1)
-
-        def cdf(self, x):
-            x = x.resize(-1, 4)
-            res = self.distr.cdf(x.detach().cpu().numpy())
-            return torch.as_tensor(res, x.dtype, device=x.device)
-
-    np.random.seed(408891471)
-    distribution = Distribution()
+    np.random.seed(128891471)
+    means = np.random.rand(4) * 2 - 1
+    stds = np.random.rand(4) * 1
+    distrs = [Distribution1d(scipy.stats.norm(means[i], stds[i])) for i in range(4)]
+    distribution = MultidimensionalIndependent(*distrs, input_shape=(4, 1, 1))
 
     generator = torch.load(resource_dir / "mnist_generator.pyt")
-
     return input_space, distribution, generator
 
 

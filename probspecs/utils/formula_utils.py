@@ -5,6 +5,7 @@ from frozendict import frozendict
 
 import torch
 
+from .module_utils import WrapperModule
 from ..formula import (
     Formula,
     Inequality,
@@ -39,7 +40,9 @@ def collect_requires_bounds(
 def make_explicit(
     term: TERM_TYPES,
     **values: torch.Tensor | float | Callable[..., torch.Tensor | float],
-) -> TERM_TYPES:
+) -> tuple[
+    TERM_TYPES, dict[ExternalVariable | ExternalFunction, ExplicitFunction | Constant]
+]:
     """
     Replaces (some) :class:`ExternalVariables` by :class:`Constants` and
     :class:`ExternalFunctions` by :class:`ExplicitFunctions`.
@@ -62,18 +65,22 @@ def make_explicit(
     When an external variable appears as the argument of a function, it's
     encoded in the function, such that it no longer needs to be supplied
     as an argument when evaluating the function or a term involving the function.
-    However, for an :class:`ExternalFunction` :code:`f` with a variable
-    :code:`x` as argument that's made explicit, this transformation
+    Note that, for an :class:`ExternalFunction` :code:`f` with a variable
+    :code:`x` as an argument that is made explicit, this transformation
     introduces an :class:`ExplicitFunction` that no longer has :code:`x`
     as it's argument, but still the function :code:`f`.
 
-    :param term: The term in which to replace :class:`ExternalVariables?
+    :param term: The term in which to replace :class:`ExternalVariables`
      and :class:`ExternalFunctions`.
     :param values: The values and callables to insert as :class:`Constants`
      and :class:`ExplicitFunctions` in :code:`term`.
      The variable or external function for which to insert a value or callable
      is specified by the argument name.
-    :return: The updated :code:`term`.
+    :return:
+     - The updated term.
+     - A mapping between the replaced :class:`ExternalVariables`
+       and :class:`ExternalFunctions` and the :class:`Constants` and
+       :class:`ExplicitFunctions` they were replaced with.
     """
 
     def name(sub_term: TERM_TYPES):
@@ -102,13 +109,13 @@ def make_explicit(
                 arg_name for arg_name in sub_term.arg_names if arg_name not in values
             )
             func_name = sub_term.func_name
-            if sub_term.func_name in values:
+            if func_name in values:
                 func = values[sub_term.func_name]
             elif isinstance(sub_term, ExplicitFunction):
                 func = sub_term.func
             else:
                 func = None
-                # Don't have the function, but have an argument
+                # Don't have the function, but have an argument (=> needs_replacement)
                 # => require the function as argument of a new ExplicitFunction
                 new_args = (sub_term.func_name,) + new_args
                 # replace func_name by something like
@@ -122,17 +129,24 @@ def make_explicit(
                 )
                 func_name = func_name + "{" + sub_desc + "}"
 
-            def new_func(*args):
-                if func is None:
-                    func_ = args[0]
-                else:
-                    func_ = func
-                args = dict(zip(new_args, args))
-                args = (
-                    args[arg_name] if arg_name in new_args else values[arg_name]
-                    for arg_name in sub_term.arg_names  # old arg names
-                )
-                return func_(*args)
+            if new_args != sub_term.arg_names or func is None:
+
+                def new_func(*args_):
+                    if func is None:
+                        func_ = args_[0]
+                    else:
+                        func_ = func
+                    args_ = dict(zip(new_args, args_, strict=True))
+                    args_ = [
+                        args_[arg_name] if arg_name in new_args else values[arg_name]
+                        for arg_name in sub_term.arg_names  # old arg names
+                    ]
+                    return func_(*args_)
+
+                if isinstance(func, torch.nn.Module):
+                    new_func = WrapperModule(new_func, {str(sub_term): func})
+            else:
+                new_func = func
 
             return ExplicitFunction(func_name, new_args, new_func)
         else:
@@ -140,7 +154,7 @@ def make_explicit(
 
     to_replace = set(term.collect(needs_replacement))
     substitution = {sub: replacement(sub) for sub in to_replace}
-    return term.replace(substitution)
+    return term.replace(substitution), substitution
 
 
 def fuse_compositions(
@@ -150,7 +164,11 @@ def fuse_compositions(
 ]:
     """
     Replaces all function compositions (:class:`Compose` instances)
-    with new external functions that evaluate the composition.
+    with new (explicit) external functions that evaluate the composition.
+
+    If there are explicit functions inside a composition that have a
+    :class:`torch.nn.Module` as target function, the explicit function by which
+    the composition is replaced is also a :class:´torch.nn.Module`.
 
     :param term: The term in which to fuse the compositions.
     :return:
@@ -160,20 +178,6 @@ def fuse_compositions(
        are replaced with.
     """
     compositions = set(term.collect(lambda sub: isinstance(sub, Composition)))
-
-    # Fuse sub-compositions first to simplify collecting arguments.
-    # Reason: for compositions inside compositions the arguments of the
-    # Compose.func attributes may not be collected as arguments of the
-    # function with which the top composition is replaced.
-    compositions = {
-        compose: Composition(
-            compose.func,
-            frozendict(
-                {arg: fuse_compositions(expr)[0] for arg, expr in compose.args.items()}
-            ),
-        )
-        for compose in compositions
-    }
 
     def replacement(compose: Composition) -> ExternalFunction:
         def is_external(term_):
@@ -199,10 +203,18 @@ def fuse_compositions(
             }
             return compose(**kwargs)
 
-        return ExplicitFunction(f"?{compose}?", compose_args, eval_compose)
+        submodules = {
+            str(extern): extern.func
+            for extern in externals
+            if isinstance(extern, ExplicitFunction)
+            and isinstance(extern.func, torch.nn.Module)
+        }
+        if len(submodules) > 0:
+            eval_compose = WrapperModule(eval_compose, submodules)
+
+        return ExplicitFunction(f"External[{compose}]", compose_args, eval_compose)
 
     substitution = {
-        orig_compose: replacement(fused_compose)
-        for orig_compose, fused_compose in compositions.items()
+        orig_compose: replacement(orig_compose) for orig_compose in compositions
     }
     return term.replace(substitution), substitution
