@@ -12,6 +12,7 @@ from probspecs.probability_distribution import (
     MultidimensionalIndependent,
 )
 
+
 import pytest
 
 
@@ -92,12 +93,58 @@ def verification_test_compose():
 
 
 @pytest.fixture
-def verification_test_mnist_gen(resource_dir):
+def verification_test_mnist_fcnn_gen(resource_dir):
     """
     A fixture supplying a
      - A 1d tensor input space with bounds [-3.0, 3.0]
      - A combination of independent normal distributions for a (1, 4, 1, 1) input space
-     - An MNIST generator network trained as part of a GAN
+     - A fully connected MNIST generator network trained as part of a GAN
+    """
+    input_space = TensorInputSpace(
+        lbs=torch.full((4,), fill_value=-3.0),
+        ubs=torch.full((4,), fill_value=3.0),
+    )
+
+    np.random.seed(128891471)
+    means = np.random.rand(4) * 2 - 1
+    stds = np.random.rand(4) * 1
+    distrs = [Distribution1d(scipy.stats.norm(means[i], stds[i])) for i in range(4)]
+    distribution = MultidimensionalIndependent(*distrs, input_shape=(4,))
+
+    class Generator(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.lin1 = nn.Linear(4, 196)
+            self.bn1 = nn.BatchNorm1d(196)
+            self.lin2 = nn.Linear(196, 392)
+            self.bn2 = nn.BatchNorm1d(392)
+            self.lin3 = nn.Linear(392, 784)
+            self.leaky_relu = nn.LeakyReLU(negative_slope=0.2)
+
+        def __call__(self, x):
+            x = x.flatten(1)
+            for (lin, bn) in zip([self.lin1, self.lin2], [self.bn1, self.bn2]):
+                x = lin(x)
+                x = bn(x.unsqueeze(-1)).squeeze(-1)
+                x = self.leaky_relu(x)
+            x = self.lin3(x)
+            x = torch.sigmoid(x)
+            return torch.reshape(x, (-1, 1, 28, 28))
+
+    generator = Generator()
+    state_dict = torch.load(resource_dir / "mnist_fcnn_generator_params.pyt")
+    generator.load_state_dict(state_dict)
+    generator.eval()
+    return input_space, distribution, generator
+
+
+@pytest.fixture
+def verification_test_mnist_conv_gen(resource_dir):
+    """
+    A fixture supplying a
+     - A 1d tensor input space with bounds [-3.0, 3.0]
+     - A combination of independent normal distributions for a (1, 4, 1, 1) input space
+     - A convolutional MNIST generator network trained as part of a GAN
     """
     input_space = TensorInputSpace(
         lbs=torch.full((4, 1, 1), fill_value=-3.0),
@@ -110,8 +157,10 @@ def verification_test_mnist_gen(resource_dir):
     distrs = [Distribution1d(scipy.stats.norm(means[i], stds[i])) for i in range(4)]
     distribution = MultidimensionalIndependent(*distrs, input_shape=(4, 1, 1))
 
-    generator = torch.load(resource_dir / "mnist_generator.pyt")
-    return input_space, distribution, generator
+    generator = torch.load(resource_dir / "mnist_conv_generator.pyt")
+    generator.eval()
+
+    return (input_space, distribution, generator)
 
 
 @pytest.fixture

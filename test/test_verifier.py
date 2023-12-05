@@ -77,8 +77,8 @@ def test_verifier_compose_1(verification_test_compose):
 
 
 @pytest.mark.xfail  # ConvTranspose and CROWN
-def test_verifier_mnist_1(verification_test_mnist_gen, small_conv_mnist_net):
-    gen_input_space, gen_distribution, generator = verification_test_mnist_gen
+def test_verifier_mnist_1(verification_test_mnist_conv_gen, small_conv_mnist_net):
+    gen_input_space, gen_distribution, generator = verification_test_mnist_conv_gen
     classifier = small_conv_mnist_net
 
     x = ExternalVariable("x")

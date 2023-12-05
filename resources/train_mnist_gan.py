@@ -18,18 +18,73 @@ if __name__ == "__main__":
     # Install tensorboard to view the training progress
     device = "cuda:0"
 
-    # Small generator for tests
+    # # Small conv transpose generator for tests
+    # torch.manual_seed(659917698158452)
+    # generator = nn.Sequential(
+    #     nn.ConvTranspose2d(4, 49, kernel_size=4, stride=1, bias=False),  # 49 x 4 x 4
+    #     nn.BatchNorm2d(49, affine=True),
+    #     nn.LeakyReLU(negative_slope=0.2),
+    #     nn.ConvTranspose2d(49, 12, kernel_size=4, stride=4, bias=False),  # 12 x 16 x 16
+    #     nn.BatchNorm2d(12, affine=True),
+    #     nn.LeakyReLU(negative_slope=0.2),
+    #     nn.ConvTranspose2d(12, 1, kernel_size=13, stride=1, bias=False),  # 1 x 28 x 28
+    #     nn.Sigmoid(),
+    # )
+    # discriminator = nn.Sequential(  # in: 1 x 28 x 28
+    #     nn.Conv2d(1, 8, kernel_size=4, stride=2, padding=3, bias=False),  # 8 x 16 x 16
+    #     nn.BatchNorm2d(8),
+    #     nn.LeakyReLU(negative_slope=0.2, inplace=True),
+    #     nn.Conv2d(8, 16, kernel_size=4, stride=2, padding=1, bias=False),  # 16 x 8 x 8
+    #     nn.BatchNorm2d(16),
+    #     nn.LeakyReLU(negative_slope=0.2, inplace=True),
+    #     nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=1, bias=False),  # 16 x 4 x 4
+    #     nn.BatchNorm2d(32),
+    #     nn.LeakyReLU(negative_slope=0.2, inplace=True),
+    #     nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1, bias=False),  # 64 x 2 x 2
+    #     nn.BatchNorm2d(64),
+    #     nn.LeakyReLU(negative_slope=0.2, inplace=True),
+    #     nn.Flatten(),  # 256
+    #     nn.Linear(256, 128),
+    #     nn.LeakyReLU(negative_slope=0.2, inplace=True),
+    #     nn.Linear(128, 2),
+    # )
+    # generator = generator.to(device)
+    # discriminator = discriminator.to(device)
+    # gen_optim = torch.optim.Adam(generator.parameters(), lr=0.001)
+    # gen_lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+    #     gen_optim, [10, 40]  # epochs
+    # )
+    # disc_optim = torch.optim.Adam(discriminator.parameters(), lr=0.001)
+    # disc_lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(disc_optim, [5, 25])
+    # epochs = 60
+    # discriminator_updates = 3
+    # batch_size = 512
+    # disc_label_noise = 0.1
+
+    # Small fully connected generator for tests
     torch.manual_seed(659917698158452)
-    generator = nn.Sequential(
-        nn.ConvTranspose2d(4, 49, kernel_size=4, stride=1, bias=False),  # 49 x 4 x 4
-        nn.BatchNorm2d(49, affine=True),
-        nn.LeakyReLU(negative_slope=0.2),
-        nn.ConvTranspose2d(49, 12, kernel_size=4, stride=4, bias=False),  # 12 x 16 x 16
-        nn.BatchNorm2d(12, affine=True),
-        nn.LeakyReLU(negative_slope=0.2),
-        nn.ConvTranspose2d(12, 1, kernel_size=13, stride=1, bias=False),  # 1 x 28 x 28
-        nn.Sigmoid(),
-    )
+
+    class Generator(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.lin1 = nn.Linear(4, 196)
+            self.bn1 = nn.BatchNorm1d(196)
+            self.lin2 = nn.Linear(196, 392)
+            self.bn2 = nn.BatchNorm1d(392)
+            self.lin3 = nn.Linear(392, 784)
+            self.leaky_relu = nn.LeakyReLU(negative_slope=0.2)
+
+        def __call__(self, x):
+            x = x.flatten(1)
+            for (lin, bn) in zip([self.lin1, self.lin2], [self.bn1, self.bn2]):
+                x = lin(x)
+                x = bn(x.unsqueeze(-1)).squeeze(-1)
+                x = self.leaky_relu(x)
+            x = self.lin3(x)
+            x = torch.sigmoid(x)
+            return torch.reshape(x, (-1, 1, 28, 28))
+
+    generator = Generator()
     discriminator = nn.Sequential(  # in: 1 x 28 x 28
         nn.Conv2d(1, 8, kernel_size=4, stride=2, padding=3, bias=False),  # 8 x 16 x 16
         nn.BatchNorm2d(8),
@@ -51,13 +106,11 @@ if __name__ == "__main__":
     generator = generator.to(device)
     discriminator = discriminator.to(device)
     gen_optim = torch.optim.Adam(generator.parameters(), lr=0.001)
-    gen_lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        gen_optim, [10, 40]  # epochs
-    )
+    gen_lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(gen_optim, [25])  # epochs
     disc_optim = torch.optim.Adam(discriminator.parameters(), lr=0.001)
     disc_lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(disc_optim, [5, 25])
-    epochs = 60
-    discriminator_updates = 3
+    epochs = 50
+    discriminator_updates = 2
     batch_size = 512
     disc_label_noise = 0.1
 
@@ -137,5 +190,6 @@ if __name__ == "__main__":
         gen_lr_scheduler.step()
         disc_lr_scheduler.step()
 
-    torch.save(generator.to("cpu"), "mnist_generator.pyt")
+    # torch.save(generator.to("cpu"), "mnist_generator.pyt")
+    torch.save(generator.to("cpu").state_dict(), "mnist_generator_params.pyt")
     torch.save(discriminator.to("cpu"), "mnist_discriminator.pyt")
