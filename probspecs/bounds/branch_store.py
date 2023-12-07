@@ -1,6 +1,7 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
 from collections import OrderedDict
+from math import prod
 
 import torch
 
@@ -78,8 +79,6 @@ class BranchStore:
         for key, values in values.items():
             if values.ndim < self.__data[key].ndim:
                 values = values.unsqueeze(0)  # add batch dimension
-            if key == "probability_mass":
-                print(key, values)
             self.__data[key] = torch.vstack([self.__data[key], values])
 
     def extend(self, other: "BranchStore"):
@@ -93,6 +92,19 @@ class BranchStore:
                 f"Other: {set(other.__data.keys())}; self: {set(self.__data.keys())}"
             )
         self.append(**other.__data)
+
+    def drop(self, mask: torch.Tensor):
+        """
+        Drops branches where :code:`mask` is :code:`True`.
+
+        :param mask: A boolean vector indicating which branches to drop.
+        """
+        mask = mask.squeeze()
+        for key, values in self.__data.items():
+            # values may also be just a vector...
+            flat_values = values.reshape(-1, prod(values.shape[1:]))
+            keep = flat_values[~mask, :]
+            self.__data[key] = keep.reshape(-1, *values.shape[1:])
 
     def sort(self, scores: torch.Tensor, descending=True, stable=False):
         """

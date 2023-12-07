@@ -68,6 +68,12 @@ def probability_bounds(
     :param split_heuristic: Which heuristic to use for selecting dimensions to split.
     :return: A generator that yields improving lower and upper bounds.
     """
+    if split_heuristic not in ("IBP", "longest-edge"):
+        raise ValueError(
+            f"Unknown split heuristic: {split_heuristic}."
+            f"Use either 'IBP' or 'longest-edge'."
+        )
+
     if probability.condition is not None:
         # use P(A|B) = P(A AND B) / P(B) to bound conditional probabilities.
         p_conjoined = Probability(probability.subject & probability.condition)
@@ -170,26 +176,24 @@ def probability_bounds(
 
     def probability_mass(
         var_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]]
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        prob_bounds = (
+    ) -> torch.Tensor:
+        probs = (
             variable_distributions[var].probability(bounds)
             for var, bounds in var_bounds.items()
         )
-        prob_lbs, prob_ubs = zip(*prob_bounds)
-        return prod(prob_lbs).reshape(-1, 1), prod(prob_ubs).reshape(-1, 1)
+        return prod(probs).reshape(-1, 1)
 
     branches = BranchStore(
         in_shape=full_input_space.input_shape,
         out_shape=(1,),  # a satisfaction score
-        probability_mass_lb=(1,),
-        probability_mass_ub=(1,),
+        probability_mass=(1,),
     )
     intermediate_bounds = {
         subs_names[term]: eval_bounds(term, variable_bounds) for term in requires_bounds
     }
     subj_skeleton_sat_fn = subj_skeleton.satisfaction_function
     sat_lb, sat_ub = subj_skeleton_sat_fn.propagate_bounds(**intermediate_bounds)
-    prob_mass_lb, prob_mass_ub = probability_mass(variable_bounds)
+    prob_mass = probability_mass(variable_bounds)
     in_lbs = {var: lbs for var, (lbs, _) in variable_bounds.items()}
     in_ubs = {var: ubs for var, (_, ubs) in variable_bounds.items()}
     branches.append(
@@ -197,60 +201,58 @@ def probability_bounds(
         in_ubs=full_input_space.combine(**in_ubs),
         out_lbs=sat_lb,
         out_ubs=sat_ub,
-        probability_mass_lb=prob_mass_lb,
-        probability_mass_ub=prob_mass_ub,
+        probability_mass=prob_mass,
     )
 
-    def eval_probability_bounds() -> tuple[torch.Tensor, torch.Tensor]:
-        # satisfaction lower bound > 0 => sufficient condition for satisfaction
-        prob_lb = torch.sum(
-            torch.where(branches.out_lbs > 0, branches.probability_mass_lb, 0)
-        )
-        # satisfaction upper bound > 0 => necessary condition for satisfaction
-        # the branches with satisfaction upper bound > 0 are those for which
-        # satisfaction hasn't yet been disproven.
-        prob_ub = torch.sum(
-            torch.where(branches.out_ubs > 0, branches.probability_mass_ub, 0)
-        )
-        return prob_lb, prob_ub
-
-    best_lb, best_ub = eval_probability_bounds()
-    yield (best_lb, best_ub)
-
-    # Usually, best_lb == best_ub occurs subj was enforced completely
-    # by bounds (see apply_symbolic_bounds)
-    if best_lb == best_ub:
-        # No need to refine bounds in this case
-        while True:
-            yield (best_lb, best_ub)
-
+    # The probability mass in all regions where sat_lb > 0, which is a
+    # sufficient condition for satisfaction.
+    prob_lb = 0.0
     while True:
-        # 1. select a batch of branches
-        estimated_prob_mass = (
-            branches.probability_mass_ub + branches.probability_mass_lb
-        ) / 2.0
-        branches.sort(estimated_prob_mass.flatten(), descending=True)
+        # 0. Remove branches where subj is certainly satisfied or certainly violated.
+        # For certainly violated branches, add their probability mass to prob_lb and
+        # remove the branches.
+        certainly_sat_mask = branches.out_lbs > 0
+        prob_lb += torch.sum(certainly_sat_mask * branches.probability_mass)
+        branches.drop(certainly_sat_mask)
+        # Remove certainly violated branches.
+        certainly_viol_mask = branches.out_ubs < 0
+        branches.drop(certainly_viol_mask)
+
+        # Satisfaction upper bound: for all remaining branches, satisfaction has neither
+        # been proven nor disproven.
+        # prob_lb + remaining probability mass is, therefore, an upper bound on the
+        # actual probability.
+        prob_ub = prob_lb + torch.sum(branches.probability_mass)
+        yield (prob_lb, prob_ub)
+
+        if prob_lb == prob_ub:
+            break
+
+        if len(branches) == 0:
+            raise RuntimeError(
+                f"No branches left, but bounds did not converge: {prob_lb} < {prob_ub}."
+            )
+
+        # 1. Select a batch of branches
+        branches.sort(branches.probability_mass.flatten(), descending=True)
         selected_branches = branches.pop(batch_size)
 
-        # 2. select dimensions to split
+        # 2. Select dimensions to split
         if split_heuristic.upper() == "IBP":
             # TODO:
             splits = split_ibp(selected_branches, full_input_space)
         elif split_heuristic.lower() == "longest-edge":
             splits = split_longest_edge(selected_branches, full_input_space)
         else:
-            raise ValueError(
-                f"Unknown split heuristic: {split_heuristic}."
-                f"Use either 'IBP' or 'longest-edge'."
-            )
+            raise NotImplementedError()
 
-        # 3. split branches
+        # 3. Split branches
         left_lbs, left_ubs = splits.left_branch
         right_lbs, right_ubs = splits.right_branch
         new_lbs = torch.vstack([left_lbs, right_lbs])
         new_ubs = torch.vstack([left_ubs, right_ubs])
 
-        # 4. compute bounds
+        # 4. Compute bounds
         variable_lbs = full_input_space.decompose(new_lbs)
         variable_ubs = full_input_space.decompose(new_ubs)
         variable_bounds = {
@@ -261,21 +263,19 @@ def probability_bounds(
             for term in requires_bounds
         }
         sat_lbs, sat_ubs = subj_skeleton_sat_fn.propagate_bounds(**intermediate_bounds)
-        prob_mass_lb, prob_mass_ub = probability_mass(variable_bounds)
+        prob_mass = probability_mass(variable_bounds)
 
-        # 5. update branches
+        # 5. Update branches
         branches.append(
             in_lbs=new_lbs,
             in_ubs=new_ubs,
             out_lbs=sat_lbs.unsqueeze(1),
             out_ubs=sat_ubs.unsqueeze(1),
-            probability_mass_lb=prob_mass_lb,
-            probability_mass_ub=prob_mass_ub,
+            probability_mass=prob_mass,
         )
 
-        # 6. report new lower/upper bound on probability
-        best_lb, best_ub = eval_probability_bounds()
-        yield (best_lb, best_ub)
+    while True:
+        yield (prob_lb, prob_ub)
 
 
 def apply_symbolic_bounds(
