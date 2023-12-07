@@ -17,15 +17,13 @@ class ProbabilityDistribution(Protocol):
     """
 
     @abstractmethod
-    def probability(
-        self, event: tuple[torch.Tensor, torch.Tensor]
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def probability(self, event: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
         """
-        Computes a lower and upper bound of the probability mass within
+        Computes the probability mass within
         a hyper-rectanglar set (an event).
         Supports batch processing (event may be a batch of hyper-rectangles).
 
-        :param event: The hyper-rectangle whose probability mass is to be bounded.
+        :param event: The hyper-rectangle whose probability mass is to be computed.
           The hyper-rectangle is provided as the "bottom-left" corner
           and the "top-right" corner, or, more generally, the smallest element
           of the hyper-rectangle in all dimensions and the largest element of
@@ -33,9 +31,8 @@ class ProbabilityDistribution(Protocol):
           The :code:`event` may also be a batch of hyper-rectangles.
           Generally, expect both the lower-left corner tensor and the
           upper-right corner tensors to have a batch dimension-
-        :return: A lower bound on the probability mass within the
-         provided hyper-rectangle and an upper bound on this probability.
-         If :code:`event` is batched, both lower and upper bound are vectors.
+        :return: The probability of the :code:`event`.
+         If :code:`event` is batched, returns a vector of probabilities.
         """
         raise NotImplementedError()
 
@@ -60,9 +57,7 @@ class Distribution1d(ProbabilityDistribution):
     def __init__(self, distribution):
         self.__distribution = distribution
 
-    def probability(
-        self, event: tuple[torch.Tensor, torch.Tensor]
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def probability(self, event: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
         lower_left, upper_right = event
         orig_device = lower_left.device
         lower_left = lower_left.detach().cpu()
@@ -71,7 +66,7 @@ class Distribution1d(ProbabilityDistribution):
         cdf_low = self.__distribution.cdf(lower_left)
         prob = cdf_high - cdf_low
         prob = torch.as_tensor(prob, device=orig_device)
-        return prob, prob
+        return prob
 
 
 class MultidimensionalIndependent(ProbabilityDistribution):
@@ -95,17 +90,14 @@ class MultidimensionalIndependent(ProbabilityDistribution):
         self.__distributions = distributions
         self.__input_shape = input_shape
 
-    def probability(
-        self, event: tuple[torch.Tensor, torch.Tensor]
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def probability(self, event: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
         lower_left, upper_right = event
         # add batch dimension if not already present
         lower_left = lower_left.reshape(-1, *self.__input_shape).flatten(1)
         upper_right = upper_right.reshape(-1, *self.__input_shape).flatten(1)
 
-        probability_bounds = (
+        probs = (
             self.__distributions[i].probability((lower_left[:, i], upper_right[:, i]))
             for i in range(lower_left.size(1))
         )
-        probability_lbs, probability_ubs = zip(*probability_bounds)
-        return prod(probability_lbs), prod(probability_ubs)
+        return prod(probs)

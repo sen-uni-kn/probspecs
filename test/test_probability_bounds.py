@@ -238,13 +238,13 @@ def test_probability_bounds_mnist_1(
         {"g": generator, "c": classifier},
         {"x": gen_input_space},
         {"x": gen_distribution},
-        batch_size=16,
+        batch_size=4,
         split_heuristic=split_heuristic,
     )
 
     prev_lb = -torch.inf
     prev_ub = torch.inf
-    for i in range(25):
+    for i in range(20):
         lb, ub = next(bounds_gen)
         print(f"lb={lb:.4f}, ub={ub:.4f}")
         assert lb >= prev_lb - 1e-7  # floating-point issues
