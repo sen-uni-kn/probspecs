@@ -11,10 +11,8 @@ from probspecs.bounds.probability_bounds import probability_bounds
 import pytest
 
 
-@pytest.mark.parametrize("split_heuristic", ["longest-edge"])
-def test_probability_bounds_1(
-    split_heuristic: Literal["longest-edge", "IBP"], verification_test_nets_1d
-):
+@pytest.mark.parametrize("split_heuristic", ["longest-edge", "IBP", "CROWN", "random"])
+def test_probability_bounds_1(split_heuristic, verification_test_nets_1d):
     """
     Test computing bounds on previously known probabilities
     """
@@ -40,10 +38,8 @@ def test_probability_bounds_1(
         assert ub >= 0.5
 
 
-@pytest.mark.parametrize("split_heuristic", ["longest-edge"])
-def test_probability_bounds_conditional_1(
-    split_heuristic: Literal["longest-edge", "IBP"], verification_test_nets_1d
-):
+@pytest.mark.parametrize("split_heuristic", ["longest-edge", "IBP"])
+def test_probability_bounds_conditional_1(split_heuristic, verification_test_nets_1d):
     """
     Test computing bounds on previously known probabilities
     """
@@ -70,10 +66,8 @@ def test_probability_bounds_conditional_1(
         assert ub >= 1.0
 
 
-@pytest.mark.parametrize("split_heuristic", ["longest-edge"])
-def test_probability_bounds_conditional_2(
-    split_heuristic: Literal["longest-edge", "IBP"], verification_test_nets_1d
-):
+@pytest.mark.parametrize("split_heuristic", ["longest-edge", "IBP"])
+def test_probability_bounds_conditional_2(split_heuristic, verification_test_nets_1d):
     """
     Test computing bounds on previously known probabilities
     """
@@ -102,10 +96,8 @@ def test_probability_bounds_conditional_2(
         assert ub >= 0.5
 
 
-@pytest.mark.parametrize("split_heuristic", ["longest-edge"])
-def test_probability_bounds_conditional_3(
-    split_heuristic: Literal["longest-edge", "IBP"], verification_test_nets_1d
-):
+@pytest.mark.parametrize("split_heuristic", ["longest-edge", "IBP"])
+def test_probability_bounds_conditional_3(split_heuristic, verification_test_nets_1d):
     """
     Test computing bounds on previously known probabilities
     """
@@ -134,9 +126,9 @@ def test_probability_bounds_conditional_3(
         assert ub >= 1.0
 
 
-@pytest.mark.parametrize("split_heuristic", ["longest-edge"])
+@pytest.mark.parametrize("split_heuristic", ["longest-edge", "IBP", "CROWN", "random"])
 def test_probability_bounds_compose_1(
-    split_heuristic: Literal["longest-edge", "IBP"],
+    split_heuristic,
     verification_test_compose,
 ):
     input_space, distribution, generator, consumer = verification_test_compose
@@ -165,10 +157,10 @@ def test_probability_bounds_compose_1(
         prev_lb, prev_ub = lb, ub
 
 
-@pytest.mark.parametrize("split_heuristic", ["longest-edge"])
+@pytest.mark.parametrize("split_heuristic", ["longest-edge", "IBP"])
 @pytest.mark.xfail  # ConvTranspose and CROWN.
 def test_probability_bounds_mnist_gen_1(
-    split_heuristic: Literal["longest-edge", "IBP"],
+    split_heuristic,
     verification_test_mnist_conv_gen,
 ):
     gen_input_space, gen_distribution, generator = verification_test_mnist_conv_gen
@@ -196,9 +188,9 @@ def test_probability_bounds_mnist_gen_1(
         prev_lb, prev_ub = lb, ub
 
 
-@pytest.mark.parametrize("split_heuristic", ["longest-edge"])
+@pytest.mark.parametrize("split_heuristic", ["longest-edge", "IBP", "CROWN", "random"])
 def test_probability_bounds_mnist_1(
-    split_heuristic: Literal["longest-edge", "IBP"],
+    split_heuristic,
     verification_test_mnist_fcnn_gen,
     small_conv_mnist_net,
 ):
@@ -252,9 +244,9 @@ def test_probability_bounds_mnist_1(
         prev_lb, prev_ub = lb, ub
 
 
-@pytest.mark.parametrize("split_heuristic", ["longest-edge"])
+@pytest.mark.parametrize("split_heuristic", ["longest-edge", "IBP"])
 def test_probability_bounds_mnist_2(
-    split_heuristic: Literal["longest-edge", "IBP"],
+    split_heuristic,
     verification_test_mnist_conv_gen,
     small_conv_mnist_net,
 ):
