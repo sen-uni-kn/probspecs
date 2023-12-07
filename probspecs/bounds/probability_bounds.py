@@ -124,6 +124,7 @@ def probability_bounds(
     }
     subs_names = {term: var.name for term, var in bounded_terms_substitution.items()}
     subj_skeleton = subj.replace(bounded_terms_substitution)
+    subj_skeleton_sat_fn = subj_skeleton.satisfaction_function
 
     # make sure probability doesn't contain nested probabilities.
     for term in requires_bounds:
@@ -168,6 +169,15 @@ def probability_bounds(
         else:
             raise NotImplementedError()
 
+    def sat_bounds(
+        var_lbs: dict[str, torch.Tensor], var_ubs: dict[str, torch.Tensor]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        var_bounds = {var: (var_lbs[var], var_ubs[var]) for var in var_lbs}
+        intermediate_bounds = {
+            subs_names[term]: eval_bounds(term, var_bounds) for term in requires_bounds
+        }
+        return subj_skeleton_sat_fn.propagate_bounds(**intermediate_bounds)
+
     def probability_mass(
         var_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]]
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -184,14 +194,10 @@ def probability_bounds(
         probability_mass_lb=(1,),
         probability_mass_ub=(1,),
     )
-    intermediate_bounds = {
-        subs_names[term]: eval_bounds(term, variable_bounds) for term in requires_bounds
-    }
-    subj_skeleton_sat_fn = subj_skeleton.satisfaction_function
-    sat_lb, sat_ub = subj_skeleton_sat_fn.propagate_bounds(**intermediate_bounds)
-    prob_mass_lb, prob_mass_ub = probability_mass(variable_bounds)
     in_lbs = {var: lbs for var, (lbs, _) in variable_bounds.items()}
     in_ubs = {var: ubs for var, (_, ubs) in variable_bounds.items()}
+    sat_lb, sat_ub = sat_bounds(in_lbs, in_ubs)
+    prob_mass_lb, prob_mass_ub = probability_mass(variable_bounds)
     branches.append(
         in_lbs=full_input_space.combine(**in_lbs),
         in_ubs=full_input_space.combine(**in_ubs),
@@ -234,7 +240,6 @@ def probability_bounds(
 
         # 2. select dimensions to split
         if split_heuristic.upper() == "IBP":
-            # TODO:
             splits = split_ibp(selected_branches, full_input_space)
         elif split_heuristic.lower() == "longest-edge":
             splits = split_longest_edge(selected_branches, full_input_space)
@@ -571,9 +576,12 @@ def propose_splits(
     return Split.stack(splits), torch.stack(is_invalid)
 
 
-def split_ibp(branches: BranchStore, combined_input_space: CombinedInputSpace) -> Split:
-    # TODO
-    #  - IBP: select dimension by improvement in satisfaction score bounds
+def split_ibp(
+    branches: BranchStore,
+    combined_input_space: CombinedInputSpace,
+    networks: dict[str, BoundedModule],
+) -> Split:
+    splits, is_invalid = propose_splits(branches, combined_input_space)
     raise NotImplementedError()
 
 
