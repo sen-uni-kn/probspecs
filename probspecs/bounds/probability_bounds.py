@@ -43,7 +43,9 @@ def probability_bounds(
     variable_distributions: dict[str, ProbabilityDistribution],
     batch_size: int = 128,
     auto_lirpa_params: AutoLiRPAParams = AutoLiRPAParams(),
-    split_heuristic: Literal["IBP", "CROWN", "longest-edge", "random"] = "IBP",
+    split_heuristic: Literal[
+        "IBP", "CROWN", "longest-edge", "random", "prob-balanced"
+    ] = "IBP",
 ) -> Generator[tuple[float, float], None, None]:
     """
     Computes a sequence of refined bounds on a probability.
@@ -60,6 +62,7 @@ def probability_bounds(
      - :code:`"CROWN"`: smart branching with CROWN.
         Split the dimenstion that leads to the best CROWN bounds.
      - :code:`"longest-edge"`: Split the dimension that has the largest diameter.
+     - :code:`"prob-balanced"`: Tries to balance the probability mass between branches.
      - :code:`"random"`: Randomly selects a dimension to split.
 
     :param probability: The probability to compute bounds on.
@@ -76,10 +79,16 @@ def probability_bounds(
     :param split_heuristic: Which heuristic to use for selecting dimensions to split.
     :return: A generator that yields improving lower and upper bounds.
     """
-    if split_heuristic not in ("IBP", "CROWN", "longest-edge", "random"):
+    if split_heuristic not in (
+        "IBP",
+        "CROWN",
+        "longest-edge",
+        "random",
+        "prob-balanced",
+    ):
         raise ValueError(
             f"Unknown split heuristic: {split_heuristic}."
-            f"Use either 'IBP', 'CROWN', 'longest-edge', or 'random'."
+            f"Use either 'IBP', 'CROWN', 'longest-edge', 'random', or 'prob-balanced'."
         )
 
     if probability.condition is not None:
@@ -169,6 +178,7 @@ def probability_bounds(
         if isinstance(external, ExternalFunction)
     }
 
+    @torch.no_grad()
     def eval_bounds(
         term_: Function,
         var_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]],
@@ -193,6 +203,7 @@ def probability_bounds(
         }
         return subj_skeleton_sat_fn.propagate_bounds(**intermediate_bounds)
 
+    @torch.no_grad()
     def probability_mass(
         var_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]]
     ) -> torch.Tensor:
@@ -241,8 +252,13 @@ def probability_bounds(
         prob_ub -= torch.sum(certainly_viol_mask * branches.probability_mass)
         branches.drop(certainly_viol_mask)
 
+        print("num branches:", len(branches))
         yield (prob_lb, prob_ub)
-        if torch.isclose(prob_lb, prob_ub):
+
+        # this is primarily for the case when apply_symbolic_bounds
+        # removed all terms from subj
+        # (for example, subj only contains bounds on variables)
+        if torch.isclose(prob_lb, prob_ub, atol=0.0, rtol=1e-5):
             break
 
         if len(branches) == 0:
@@ -265,6 +281,10 @@ def probability_bounds(
             )
         elif split_heuristic.lower() == "longest-edge":
             splits = split_longest_edge(selected_branches, full_input_space)
+        elif split_heuristic.lower() == "prob-balanced":
+            splits = split_prob_balanced(
+                selected_branches, full_input_space, probability_mass
+            )
         elif split_heuristic.lower() == "random":
             splits = split_random(
                 selected_branches, full_input_space, split_heuristic_rng
@@ -606,6 +626,24 @@ def propose_splits(
     return Split.stack(splits), torch.stack(is_invalid)
 
 
+def _get_branch_bounds(splits, combined_input_space):
+    left_lbs, left_ubs = splits.left_branch
+    right_lbs, right_ubs = splits.right_branch
+    num_splits, batch_size, input_size = left_lbs.shape
+    left_lbs = left_lbs.reshape(-1, input_size)
+    left_ubs = left_ubs.reshape_as(left_lbs)
+    right_lbs = right_lbs.reshape_as(left_lbs)
+    right_ubs = right_ubs.reshape_as(left_lbs)
+    left_lbs = combined_input_space.decompose(left_lbs)
+    left_ubs = combined_input_space.decompose(left_ubs)
+    right_lbs = combined_input_space.decompose(right_lbs)
+    right_ubs = combined_input_space.decompose(right_ubs)
+    left_bounds = {var: (left_lbs[var], left_ubs[var]) for var in left_lbs}
+    right_bounds = {var: (right_lbs[var], right_ubs[var]) for var in left_lbs}
+    return left_bounds, right_bounds, num_splits, batch_size
+
+
+@torch.no_grad()
 def smart_branching(
     branches: BranchStore,
     combined_input_space: CombinedInputSpace,
@@ -647,25 +685,14 @@ def smart_branching(
     :return: The splits to perform.
     """
     splits, is_invalid = propose_splits(branches, combined_input_space)
-
-    left_lbs, left_ubs = splits.left_branch  # shape: (split dims, batch, input dims)
-    right_lbs, right_ubs = splits.right_branch
-    num_splits, batch_size, input_size = left_lbs.shape
-    left_lbs = left_lbs.reshape(-1, input_size)
-    left_ubs = left_ubs.reshape_as(left_lbs)
-    right_lbs = right_lbs.reshape_as(left_lbs)
-    right_ubs = right_ubs.reshape_as(left_lbs)
-    left_lbs = combined_input_space.decompose(left_lbs)
-    left_ubs = combined_input_space.decompose(left_ubs)
-    right_lbs = combined_input_space.decompose(right_lbs)
-    right_ubs = combined_input_space.decompose(right_ubs)
+    left_bounds, right_bounds, num_splits, batch_size = _get_branch_bounds(
+        splits, combined_input_space
+    )
 
     # We already use very large batch sizes here since left_lbs contains
     # num input dims * original batch size many elements.
     # To balance memory requirements better, it makes sense to perform ibp twice here
     # instead of one call with an extremely large batch size.
-    left_bounds = {var: (left_lbs[var], left_ubs[var]) for var in left_lbs}
-    right_bounds = {var: (right_lbs[var], right_ubs[var]) for var in left_lbs}
     left_sat_lbs, left_sat_ubs = compute_sat_bounds(left_bounds, method)
     right_sat_lbs, right_sat_ubs = compute_sat_bounds(right_bounds, method)
 
@@ -682,28 +709,17 @@ def smart_branching(
     right_sat_ubs.masked_fill_(is_invalid, torch.inf)
 
     # Split selection strategy:
-    #  1. Select splits that allow pruning one of the resulting branches
-    #  2. If there are no such splits, select the one with the largest
-    #     improvement in lower or upper bounds on the branch with the worse
-    #     lower/upper bound.
-    # Adapted from: BaBSR in Rudy Bunel, Jingyue Lu, Ilker Turkaslan, Philip H. S. Torr,
+    # Select the split which makes the lower/upper bound on the branch
+    # with the smaller/larger lower/upper bound largest/smallest.
+    # Branches which make the lower bound positive or the upper bound negative
+    # are the best splits, as they allow for pruning the branch.
+    #
+    # Adapted from: BaBSR (Rudy Bunel, Jingyue Lu, Ilker Turkaslan, Philip H. S. Torr,
     # Pushmeet Kohli, M. Pawan Kumar: Branch and Bound for Piecewise Linear
-    # Neural Network Verification. J. Mach. Learn. Res. 21: 42:1-42:39 (2020)
-    can_prune = (
-        (left_sat_lbs > 0)
-        | (right_sat_lbs > 0)
-        | (left_sat_ubs < 0)
-        | (right_sat_ubs < 0)
-    )
+    # Neural Network Verification. J. Mach. Learn. Res. 21: 42:1-42:39 (2020))
     worse_sat_lbs = torch.minimum(left_sat_lbs, right_sat_lbs)
     worse_sat_ubs = torch.maximum(left_sat_ubs, right_sat_ubs)
-    current_sat_lbs = branches.out_lbs
-    current_sat_ubs = branches.out_ubs
-    # make lbs improvement and ubs improvement comparable
-    sat_lbs_improve = worse_sat_lbs - current_sat_lbs.T
-    sat_ubs_improve = current_sat_ubs.T - worse_sat_ubs
-    larger_improve = torch.maximum(sat_lbs_improve, sat_ubs_improve)
-    select_score = torch.where(can_prune, torch.inf, larger_improve)
+    select_score = torch.maximum(worse_sat_lbs, -worse_sat_ubs)
     # resolve ties in select_scores randomly
     permute = torch.randperm(num_splits, generator=rng)
     select_score = select_score[permute, :]
@@ -730,6 +746,41 @@ def split_longest_edge(
     edge_len = branches.in_ubs - branches.in_lbs
     edge_len.masked_fill_(is_invalid.T, -torch.inf)
     split_dims = torch.argmax(edge_len, dim=1)
+    return splits.select(split_dims)
+
+
+def split_prob_balanced(
+    branches: BranchStore,
+    combined_input_space: CombinedInputSpace,
+    prob_mass: Callable[[dict[str, tuple[torch.Tensor, torch.Tensor]]], torch.Tensor],
+) -> Split:
+    """
+    Select input dimensions to split.
+    :code:`split_prob_balanced` selects to split the dimension which leads to the
+    best balance in probability mass among the branches resulting from the split.
+    Concretely, it selects the split minimizing the absolute difference in probability
+    mass between the branches resulting from a split.
+
+    :param branches: The branches for which to determine the dimensions to split.
+    :param combined_input_space: The combined input space of all variables.
+    :param prob_mass: Computes the probability mass within a region defined by
+     bounds on the input variables.
+    :return: The splits to perform.
+    """
+    splits, is_invalid = propose_splits(branches, combined_input_space)
+    left_bounds, right_bounds, num_splits, batch_size = _get_branch_bounds(
+        splits, combined_input_space
+    )
+
+    left_prob_mass = prob_mass(left_bounds)
+    right_prob_mass = prob_mass(right_bounds)
+    left_prob_mass = left_prob_mass.reshape(num_splits, batch_size)
+    right_prob_mass = right_prob_mass.reshape(num_splits, batch_size)
+
+    abs_difference = torch.abs(left_prob_mass - right_prob_mass)
+    # give invalid branches maximally bad values, so that they aren't selected.
+    abs_difference.masked_fill_(is_invalid, -torch.inf)
+    split_dims = torch.argmin(abs_difference, dim=0)
     return splits.select(split_dims)
 
 
