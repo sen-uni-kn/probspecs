@@ -105,7 +105,7 @@ class BoundHeaviside(Bound):
             pos_lA = last_lA.clamp(min=0)
             lA = upper_d * neg_lA + lower_d * pos_lA
             lbias = (neg_lA * upper_b + pos_lA * lower_b).flatten(2).sum(-1)
-        return [(lA, uA), (None, None)], lbias, ubias
+        return [(lA, uA)], lbias, ubias
 
 
 register_custom_op("custom::Heaviside", BoundHeaviside)
