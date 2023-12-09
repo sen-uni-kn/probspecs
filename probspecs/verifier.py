@@ -59,10 +59,13 @@ def verify(
     external_vars_domains: dict[str, InputSpace],
     external_vars_distributions: dict[str, ProbabilityDistribution],
     workers: tuple[str | torch.device, ...] | None = None,
+    parallel: bool = True,
     timeout: float | None = None,
     batch_size: int = 128,
     auto_lirpa_params: AutoLiRPAParams = AutoLiRPAParams(method="CROWN"),
-    split_heuristic: Literal["IBP", "longest-edge"] = "longest-edge",
+    split_heuristic: Literal[
+        "IBP", "CROWN", "longest-edge", "random", "prob-balanced"
+    ] = "longest-edge",
 ) -> tuple[VerificationStatus, dict[Function, tuple[torch.Tensor, torch.Tensor]]]:
     """
     Verifies a formula.
@@ -85,6 +88,9 @@ def verify(
     :param workers: The devices (cpu, cuda:1, cuda:2, ...)
      to use for the different workers computing bounds.
      The length of this tuple determines the number of workers.
+    :param parallel: Whether to use parallel processing.
+     If set to :code:`False`, bounds of terms are computed sequentially.
+     If :code:`parallel=False`, only the first value of :code:`workers` is used.
     :param timeout: The timeout for verification.
      When verification exceeds this time budget, it is aborted.
     :param batch_size: The batch size to use for computing bounds.
@@ -97,6 +103,8 @@ def verify(
     if workers is None:
         # TODO: use GPUs by default
         workers = ("cpu",) * len(os.sched_getaffinity(0))
+    if not parallel:
+        workers = workers[:1]
 
     # Replace all given externals by ExplicitFunctions/Constants
     formula, make_explicit_subs = make_explicit(formula, **externals)
@@ -150,6 +158,7 @@ def verify(
                 },
             )
             worker_processes.append(worker)
+            # TODO: sequential
             worker.start()
 
         def terminate_workers():
@@ -186,6 +195,8 @@ def verify(
             term_key, new_bounds = new_result()
             best_bounds[term_subs[term_key]] = new_bounds
             outcome = formula_skeleton.propagate_bounds(**best_bounds)
+            print(outcome)
+            print(best_bounds)
 
         terminate_workers()
         best_bounds = {

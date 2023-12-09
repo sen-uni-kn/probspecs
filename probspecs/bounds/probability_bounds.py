@@ -45,7 +45,7 @@ def probability_bounds(
     auto_lirpa_params: AutoLiRPAParams = AutoLiRPAParams(),
     split_heuristic: Literal[
         "IBP", "CROWN", "longest-edge", "random", "prob-balanced"
-    ] = "IBP",
+    ] = "longest-edge",
 ) -> Generator[tuple[float, float], None, None]:
     """
     Computes a sequence of refined bounds on a probability.
@@ -252,7 +252,6 @@ def probability_bounds(
         prob_ub -= torch.sum(certainly_viol_mask * branches.probability_mass)
         branches.drop(certainly_viol_mask)
 
-        print("num branches:", len(branches))
         yield (prob_lb, prob_ub)
 
         # this is primarily for the case when apply_symbolic_bounds
@@ -529,10 +528,23 @@ def propose_splits(
         split = Split(
             left_branch=(lbs_flat, left_ubs), right_branch=(right_lbs, ubs_flat)
         )
-        # any split is valid, so return all false for the invalid splits tensor
-        is_invalid_ = torch.zeros(
-            lbs_flat.size(0), dtype=torch.bool, device=lbs_flat.device
+        # The split is invalid if the bounds are already tight.
+        is_invalid_ = ubs_flat[:, dim_] == lbs_flat[:, dim_]
+        return split, is_invalid_
+
+    def ordinal_split(dim_) -> tuple[Split, torch.Tensor]:
+        midpoint = (ubs_flat[:, dim_] + lbs_flat[:, dim_]) / 2.0
+        # two splits: set lower bound to midpoint
+        # and set upper bound to midpoint
+        left_ubs = ubs_flat.detach().clone()
+        right_lbs = lbs_flat.detach().clone()
+        left_ubs[:, dim_] = torch.floor(midpoint)
+        right_lbs[:, dim_] = torch.ceil(midpoint)
+        split = Split(
+            left_branch=(lbs_flat, left_ubs), right_branch=(right_lbs, ubs_flat)
         )
+        # The split is invalid if the bounds are already tight.
+        is_invalid_ = ubs_flat[:, dim_] == lbs_flat[:, dim_]
         return split, is_invalid_
 
     def categorical_split(dims_, val_i_) -> tuple[Split, torch.Tensor]:
@@ -601,6 +613,11 @@ def propose_splits(
                     case TabularInputSpace.AttributeType.CONTINUOUS:
                         dim = offset + layout[attr_name]
                         split, invalid = continuous_split(dim)
+                        splits[dim] = split
+                        is_invalid[dim] = invalid
+                    case TabularInputSpace.AttributeType.ORDINAL:
+                        dim = offset + layout[attr_name]
+                        split, invalid = ordinal_split(dim)
                         splits[dim] = split
                         is_invalid[dim] = invalid
                     case TabularInputSpace.AttributeType.CATEGORICAL:
