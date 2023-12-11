@@ -38,3 +38,16 @@ def test_refine_bounds(split_heuristic: Literal["longest-edge", "IBP"]):
 
         if i % 5 == 0 or i == 24:
             print(f"{i:3} lb: {best_lb}; ub: {best_ub}")
+
+
+@pytest.mark.xfail(not torch.cuda.is_available(), reason="No CUDA device available")
+def test_refine_bounds_on_cuda():
+    torch.manual_seed(93934313564478)
+    net = nn.Sequential(nn.Linear(10, 10), nn.ReLU(), nn.Linear(10, 2))
+
+    in_lb = torch.zeros(10)
+    in_ub = torch.ones(10)
+
+    bounds_gen = network_bounds(net, (in_lb, in_ub), batch_size=1024, device="cuda")
+    for i in range(5):
+        next(bounds_gen)

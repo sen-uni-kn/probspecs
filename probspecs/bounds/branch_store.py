@@ -34,6 +34,7 @@ class BranchStore:
         self,
         in_shape: tuple | torch.Size = None,
         out_shape: tuple | torch.Size = None,
+        device: str | torch.device | None = None,
         **further_shapes: tuple | torch.Size,
     ):
         """
@@ -45,6 +46,7 @@ class BranchStore:
         :param out_shape: The shape of the output.
          If omitted, the attributes :code:`out_lbs` and :code:`out_ubs`
          are unavailable.
+        :param device: Where to store tensors.
         :param further_shapes: Shapes of further values to store in
          this :class:`BranchStore`.
          The keywords you use for the shapes are the keys for which
@@ -52,13 +54,13 @@ class BranchStore:
         """
         self.__data = OrderedDict()
         if in_shape is not None:
-            self.__data["in_lbs"] = torch.empty((0,) + in_shape)
-            self.__data["in_ubs"] = torch.empty((0,) + in_shape)
+            self.__data["in_lbs"] = torch.empty((0,) + in_shape, device=device)
+            self.__data["in_ubs"] = torch.empty((0,) + in_shape, device=device)
         if out_shape is not None:
-            self.__data["out_lbs"] = torch.empty((0,) + out_shape)
-            self.__data["out_ubs"] = torch.empty((0,) + out_shape)
+            self.__data["out_lbs"] = torch.empty((0,) + out_shape, device=device)
+            self.__data["out_ubs"] = torch.empty((0,) + out_shape, device=device)
         for key, shape in further_shapes.items():
-            self.__data[key] = torch.empty((0,) + shape)
+            self.__data[key] = torch.empty((0,) + shape, device=device)
 
     def append(
         self,

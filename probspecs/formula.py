@@ -350,6 +350,10 @@ class Inequality:
             compare = ops.le
             anti = ops.gt
 
+        lhs_lb = torch.as_tensor(lhs_lb).detach().cpu().numpy()
+        lhs_ub = torch.as_tensor(lhs_ub).detach().cpu().numpy()
+        rhs_lb = torch.as_tensor(rhs_lb).detach().cpu().numpy()
+        rhs_ub = torch.as_tensor(rhs_ub).detach().cpu().numpy()
         return np.where(
             compare(lhs_ub, rhs_lb),
             TL.TRUE,

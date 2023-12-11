@@ -46,6 +46,7 @@ def probability_bounds(
     split_heuristic: Literal[
         "IBP", "CROWN", "longest-edge", "random", "prob-balanced"
     ] = "longest-edge",
+    device: str | torch.device | None = None,
 ) -> Generator[tuple[float, float], None, None]:
     """
     Computes a sequence of refined bounds on a probability.
@@ -77,6 +78,8 @@ def probability_bounds(
     :param batch_size: The number of branches to consider at a time.
     :param auto_lirpa_params: Parameters for running auto_LiRPA.
     :param split_heuristic: Which heuristic to use for selecting dimensions to split.
+    :param device: The device to compute on.
+     If None, the tensors remain on the device they already reside on.
     :return: A generator that yields improving lower and upper bounds.
     """
     if split_heuristic not in (
@@ -103,6 +106,7 @@ def probability_bounds(
             batch_size,
             auto_lirpa_params,
             split_heuristic,
+            device,
         )
         p_condition_bounds = probability_bounds(
             p_condition,
@@ -112,6 +116,7 @@ def probability_bounds(
             batch_size,
             auto_lirpa_params,
             split_heuristic,
+            device,
         )
 
         def conditional_bounds_gen():
@@ -137,7 +142,7 @@ def probability_bounds(
 
     # add batch dimensions to all bounds
     variable_bounds = {
-        var: (lbs.unsqueeze(0), ubs.unsqueeze(0))
+        var: (lbs.unsqueeze(0).to(device), ubs.unsqueeze(0).to(device))
         for var, (lbs, ubs) in variable_bounds.items()
     }
 
@@ -173,6 +178,7 @@ def probability_bounds(
             external.get_function(**networks),
             variable_bounds[external.arg_names[0]][0],  # lower bound of arg
             auto_lirpa_params.bound_ops,
+            device,
         )
         for external in requires_bounds
         if isinstance(external, ExternalFunction)
@@ -201,7 +207,10 @@ def probability_bounds(
             subs_names[term]: eval_bounds(term, var_bounds, method)
             for term in requires_bounds
         }
-        return subj_skeleton_sat_fn.propagate_bounds(**intermediate_bounds)
+        sat_lb_, sat_ub_ = subj_skeleton_sat_fn.propagate_bounds(**intermediate_bounds)
+        sat_lb_ = sat_lb_.to(device=device)
+        sat_ub_ = sat_ub_.to(device=device)
+        return sat_lb_, sat_ub_
 
     @torch.no_grad()
     def probability_mass(
@@ -217,6 +226,7 @@ def probability_bounds(
         in_shape=full_input_space.input_shape,
         out_shape=(1,),  # a satisfaction score
         probability_mass=(1,),
+        device=device,
     )
     sat_lb, sat_ub = sat_bounds(variable_bounds)
     prob_mass = probability_mass(variable_bounds)
@@ -232,13 +242,13 @@ def probability_bounds(
 
     # prob_lb = probability mass in all regions where sat_lb > 0, which is a
     # sufficient condition for satisfaction.
-    prob_lb = torch.tensor(0.0, dtype=prob_mass.dtype)
+    prob_lb = torch.tensor(0.0, dtype=prob_mass.dtype, device=device)
     # prob_ub = 1 - probability mass in all regions where sat_ub < 0, which is a
     # sufficient condition for violation.
     prob_ub = torch.sum(branches.probability_mass)  # total probability may be < 1.0
     # Some split heuristics resolve ties using randomness to avoid that the
     # first dimensions are split more frequently than later dimensions.
-    split_heuristic_rng = torch.Generator(device=sat_lb.device)
+    split_heuristic_rng = torch.Generator(device=device)
     split_heuristic_rng.manual_seed(513733474145742)
     while True:
         # 0. Remove branches where subj is certainly satisfied or certainly violated.
@@ -738,7 +748,7 @@ def smart_branching(
     worse_sat_ubs = torch.maximum(left_sat_ubs, right_sat_ubs)
     select_score = torch.maximum(worse_sat_lbs, -worse_sat_ubs)
     # resolve ties in select_scores randomly
-    permute = torch.randperm(num_splits, generator=rng)
+    permute = torch.randperm(num_splits, generator=rng, device=rng.device)
     select_score = select_score[permute, :]
     split_dims = torch.argmax(select_score, dim=0)
     split_dims = permute[split_dims]

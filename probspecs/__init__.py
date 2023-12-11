@@ -6,7 +6,7 @@ from .trinary_logic import TrinaryLogic
 from .input_space import InputSpace, TabularInputSpace, TensorInputSpace
 from .probability_distribution import (
     ProbabilityDistribution,
-    Distribution1d,
+    ContinuousDistribution1d,
     MultidimensionalIndependent,
 )
 from .verifier import verify

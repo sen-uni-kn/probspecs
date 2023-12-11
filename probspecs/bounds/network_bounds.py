@@ -17,6 +17,7 @@ def network_bounds(
     batch_size: int = 128,
     auto_lirpa_params: AutoLiRPAParams = AutoLiRPAParams(),
     split_heuristic: Literal["IBP", "longest-edge"] = "IBP",
+    device: str | torch.device | None = None,
 ) -> Generator[tuple[torch.Tensor, torch.Tensor], None, None]:
     """
     Computes a sequence of refined bounds for the output of :code:`network`.
@@ -33,12 +34,14 @@ def network_bounds(
     :param batch_size: The number of branches to consider at a time.
     :param auto_lirpa_params: Parameters for running auto_LiRPA.
     :param split_heuristic: Which heuristic to use for selecting dimensions to split.
+    :param device: The device to compute on.
+     If None, the tensors remain on the device they already reside on.
     :return: A generator that yields improving lower and upper bounds.
     """
     initial_in_lb, initial_in_ub = input_bounds
-    initial_in_lb = initial_in_lb.unsqueeze(0)
-    initial_in_ub = initial_in_ub.unsqueeze(0)
-    network = BoundedModule(network, initial_in_lb, auto_lirpa_params.bound_ops)
+    initial_in_lb = initial_in_lb.unsqueeze(0).to(device=device)
+    initial_in_ub = initial_in_ub.unsqueeze(0).to(device=device)
+    network = BoundedModule(network, initial_in_lb, auto_lirpa_params.bound_ops, device)
     bounded_tensor = construct_bounded_tensor(initial_in_lb, initial_in_ub)
 
     best_lb, best_ub = network.compute_bounds(
@@ -46,8 +49,10 @@ def network_bounds(
     )
     yield (best_lb, best_ub)
 
-    branches = BranchStore(initial_in_lb.shape[1:], best_lb.shape[1:])
-    branches.append(initial_in_lb, initial_in_ub, best_lb, best_ub)
+    branches = BranchStore(initial_in_lb.shape[1:], best_lb.shape[1:], device)
+    branches.append(
+        in_lbs=initial_in_lb, in_ubs=initial_in_ub, out_lbs=best_lb, out_ubs=best_ub
+    )
 
     def score_branches():
         """
@@ -105,7 +110,9 @@ def network_bounds(
         )
 
         # 5. update branches
-        branches.append(split_in_lbs, split_in_ubs, new_lbs, new_ubs)
+        branches.append(
+            in_lbs=split_in_lbs, in_ubs=split_in_ubs, out_lbs=new_lbs, out_ubs=new_ubs
+        )
 
         # 6. update best upper/lower bound
         best_lb = torch.amin(branches.out_lbs, dim=0)

@@ -305,5 +305,29 @@ def test_probability_bounds_mnist_2(
         prev_lb, prev_ub = lb, ub
 
 
+@pytest.mark.xfail(not torch.cuda.is_available(), reason="No CUDA device available.")
+def test_probability_bounds_on_cuda(verification_test_nets_1d):
+    """
+    Test computing probability bounds on CUDA.
+    """
+    torch.manual_seed(50215201576157)
+    net, _, input_space, distribution = verification_test_nets_1d
+
+    net_func = ExternalFunction("net", ("x",))
+    prob = Probability(net_func[:, 0] >= net_func[:, 1])
+
+    bounds_gen = probability_bounds(
+        prob,
+        {"net": net},
+        {"x": input_space},
+        {"x": distribution},
+        batch_size=16,
+        device="cuda",
+    )
+
+    for i in range(5):
+        next(bounds_gen)
+
+
 if __name__ == "__main__":
     pytest.main()

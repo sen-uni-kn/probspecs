@@ -8,7 +8,7 @@ from pathlib import Path
 
 from probspecs import TensorInputSpace
 from probspecs.probability_distribution import (
-    Distribution1d,
+    ContinuousDistribution1d,
     MultidimensionalIndependent,
 )
 
@@ -41,7 +41,7 @@ def verification_test_nets_1d():
         lbs=torch.tensor([-10.0]),
         ubs=torch.tensor([10.0]),
     )
-    distribution = Distribution1d(scipy.stats.norm)
+    distribution = ContinuousDistribution1d(scipy.stats.norm)
 
     # binary classifier
     # net produces the first class if the input is >= 0.0
@@ -80,7 +80,7 @@ def verification_test_compose():
         lbs=torch.full((2,), fill_value=-10.0),
         ubs=torch.full((2,), fill_value=10.0),
     )
-    distrs = [Distribution1d(scipy.stats.norm) for i in range(2)]
+    distrs = [ContinuousDistribution1d(scipy.stats.norm) for i in range(2)]
     distribution = MultidimensionalIndependent(*distrs, input_shape=(2,))
 
     generator = nn.Sequential(
@@ -108,7 +108,9 @@ def verification_test_mnist_fcnn_gen(resource_dir):
     np.random.seed(128891471)
     means = np.random.rand(4) * 2 - 1
     stds = np.random.rand(4) * 1
-    distrs = [Distribution1d(scipy.stats.norm(means[i], stds[i])) for i in range(4)]
+    distrs = [
+        ContinuousDistribution1d(scipy.stats.norm(means[i], stds[i])) for i in range(4)
+    ]
     distribution = MultidimensionalIndependent(*distrs, input_shape=(4,))
 
     class Generator(nn.Module):
@@ -154,7 +156,9 @@ def verification_test_mnist_conv_gen(resource_dir):
     np.random.seed(128891471)
     means = np.random.rand(4) * 2 - 1
     stds = np.random.rand(4) * 1
-    distrs = [Distribution1d(scipy.stats.norm(means[i], stds[i])) for i in range(4)]
+    distrs = [
+        ContinuousDistribution1d(scipy.stats.norm(means[i], stds[i])) for i in range(4)
+    ]
     distribution = MultidimensionalIndependent(*distrs, input_shape=(4, 1, 1))
 
     generator = torch.load(resource_dir / "mnist_conv_generator.pyt")

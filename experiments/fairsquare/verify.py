@@ -1,6 +1,7 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
 import argparse
+from time import time
 
 from probspecs import verify, prob, compose, ExternalFunction, ExternalVariable
 from experiments.fairsquare.population_models import *
@@ -25,7 +26,7 @@ if __name__ == "__main__":
         case "ind":
             pop_model = IndependentPopulationModel()
         case "BN":
-            raise NotImplementedError()
+            pop_model = BayesianNetworkPopulationModel()
         case "BNc":
             raise NotImplementedError()
         case _:
@@ -35,9 +36,9 @@ if __name__ == "__main__":
         case "NN_V2H1":
             classifier = FairSquareNNV2H1()
         case "NN_V2H2":
-            raise NotImplementedError()
+            classifier = FairSquareNNV2H2()
         case "NN_V3H2":
-            raise NotImplementedError()
+            classifier = FairSquareNNV3H2()
         case _:
             raise ValueError()
 
@@ -69,12 +70,17 @@ if __name__ == "__main__":
     p_advantaged = prob(high_income, condition=male & base_cond)
     is_fair = p_disadvantaged / p_advantaged > 1 - args.fairness_eps
 
+    start_time = time()
     verification_status, probability_bounds = verify(
         is_fair,
         networks,
         {"x": pop_model.input_space},
         {"x": pop_model.probability_distribution},
         split_heuristic="IBP",
+        worker_devices=("cpu",),
+        parallel=False,
     )
+    end_time = time()
     print(verification_status)
     print(probability_bounds)
+    print("Runtime: ", end_time - start_time)
