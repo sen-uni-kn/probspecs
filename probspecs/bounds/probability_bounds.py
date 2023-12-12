@@ -6,6 +6,7 @@ from math import prod
 from typing import Generator, Literal, Sequence, Callable
 
 import torch
+from frozendict import frozendict
 from torch import nn
 from auto_LiRPA import BoundedModule
 
@@ -46,6 +47,7 @@ def probability_bounds(
     split_heuristic: Literal[
         "IBP", "CROWN", "longest-edge", "random", "prob-balanced"
     ] = "longest-edge",
+    split_heuristic_params: dict[Literal["better_branch"], bool] = frozendict(),
     device: str | torch.device | None = None,
 ) -> Generator[tuple[float, float], None, None]:
     """
@@ -59,12 +61,28 @@ def probability_bounds(
 
     Split heuristics:
      - :code:`"IBP"`: smart branching with IBP.
-        Split the dimenstion that leads to the best IBP bounds.
+        Split the dimension that leads to the best IBP bounds.
+        This heuristic has an additional parameter :code:`better_branch`
+        that determines which branch that results from a split is selected
+        to evaluate the split.
+        You can specify this parameter using the :code:`split_heuristic_params`
+        argument.
+        By default (:code:`better_branch=True`), a split is evaluated using the
+        bounds of the resulting branch with the better bounds.
+        When :code:`better_branch=True`, instead the branch with the worse bounds
+        is used.
+        This is the strategy of BaBSR [BunelEtAl2020]_.
      - :code:`"CROWN"`: smart branching with CROWN.
-        Split the dimenstion that leads to the best CROWN bounds.
+        Split the dimension that leads to the best CROWN bounds.
+        This split heuristic also has a :code:`better_branch? parameter.
+        See :code:`IBP` for more details on this parameter.
      - :code:`"longest-edge"`: Split the dimension that has the largest diameter.
      - :code:`"prob-balanced"`: Tries to balance the probability mass between branches.
      - :code:`"random"`: Randomly selects a dimension to split.
+
+    .. [BunelEtAl2020] Rudy Bunel, Jingyue Lu, Ilker Turkaslan, Philip H. S. Torr,
+        Pushmeet Kohli, M. Pawan Kumar: Branch and Bound for Piecewise Linear
+        Neural Network Verification. J. Mach. Learn. Res. 21: 42:1-42:39 (2020)
 
     :param probability: The probability to compute bounds on.
     :param networks: The neural networks appearing as :class:`ExternalFunction`
@@ -78,6 +96,7 @@ def probability_bounds(
     :param batch_size: The number of branches to consider at a time.
     :param auto_lirpa_params: Parameters for running auto_LiRPA.
     :param split_heuristic: Which heuristic to use for selecting dimensions to split.
+    :param split_heuristic_params: Additional parameters of the split heuristic.
     :param device: The device to compute on.
      If None, the tensors remain on the device they already reside on.
     :return: A generator that yields improving lower and upper bounds.
@@ -106,6 +125,7 @@ def probability_bounds(
             batch_size,
             auto_lirpa_params,
             split_heuristic,
+            split_heuristic_params,
             device,
         )
         p_condition_bounds = probability_bounds(
@@ -116,6 +136,7 @@ def probability_bounds(
             batch_size,
             auto_lirpa_params,
             split_heuristic,
+            split_heuristic_params,
             device,
         )
 
@@ -262,6 +283,12 @@ def probability_bounds(
         prob_ub -= torch.sum(certainly_viol_mask * branches.probability_mass)
         branches.drop(certainly_viol_mask)
 
+        print(probability)
+        print(
+            len(branches), torch.sum(certainly_sat_mask), torch.sum(certainly_viol_mask)
+        )
+        print(prob_lb, prob_ub)
+        print("-" * 80)
         yield (prob_lb, prob_ub)
 
         # this is primarily for the case when apply_symbolic_bounds
@@ -287,6 +314,7 @@ def probability_bounds(
                 sat_bounds,
                 method=split_heuristic.upper(),
                 rng=split_heuristic_rng,
+                **split_heuristic_params,
             )
         elif split_heuristic.lower() == "longest-edge":
             splits = split_longest_edge(selected_branches, full_input_space)
@@ -679,6 +707,7 @@ def smart_branching(
         tuple[torch.Tensor, torch.Tensor],
     ],
     method: Literal["IBP", "CROWN"],
+    better_branch: bool = True,
     rng: torch.Generator = torch.Generator(),
 ) -> Split:
     """
@@ -689,13 +718,13 @@ def smart_branching(
     The improvements in lower and upper bounds are estimated using the
     bounding algorithm :code:`method`.
     You should select a cheap bounding algorithm, such as IBP for this task.
-
-    Concretely, :code:`smart_branching` prefers splits that lead to pruning branches
-    (it considers this the largest possible improvement in bounds).
-    Otherwise, it selects the split which produces the best lower/upper bounds
-    when selecting the worse lower/upper bound from the two branches to which a split
-    leads.
     This split strategy is an adaption of BaBSR from [BunelEtAl2020]_.
+
+    Each split is evaluated, either by selecting the branch resulting from the split
+    that has the better or worse bounds.
+    Which is selected is determined by the :code:`better_branch` argument.
+    By default, the better bounds are used, but using the worse bounds may lead to
+    a more balanced branching tree.
 
     .. [BunelEtAl2020] Rudy Bunel, Jingyue Lu, Ilker Turkaslan, Philip H. S. Torr,
         Pushmeet Kohli, M. Pawan Kumar: Branch and Bound for Piecewise Linear
@@ -707,6 +736,9 @@ def smart_branching(
      for a set of variable bounds (first argument).
      The second argument specifies the method to use for computing the bounds.
     :param method: The method to use for computing bounds.
+    :param better_branch: Whether to select the branch with the better
+     bounds (:code:`True`) or the branch with the worse bounds (:code:`False`)
+     for evaluating a split.
     :param rng: A random number generator for breaking ties among splits
      that lead equally large improvements.
     :return: The splits to perform.
@@ -744,9 +776,18 @@ def smart_branching(
     # Adapted from: BaBSR (Rudy Bunel, Jingyue Lu, Ilker Turkaslan, Philip H. S. Torr,
     # Pushmeet Kohli, M. Pawan Kumar: Branch and Bound for Piecewise Linear
     # Neural Network Verification. J. Mach. Learn. Res. 21: 42:1-42:39 (2020))
-    worse_sat_lbs = torch.minimum(left_sat_lbs, right_sat_lbs)
-    worse_sat_ubs = torch.maximum(left_sat_ubs, right_sat_ubs)
-    select_score = torch.maximum(worse_sat_lbs, -worse_sat_ubs)
+    if better_branch:
+        score_sat_lbs = torch.maximum(left_sat_lbs, right_sat_lbs)
+        score_sat_ubs = torch.minimum(left_sat_ubs, right_sat_ubs)
+    else:
+        score_sat_lbs = torch.minimum(left_sat_lbs, right_sat_lbs)
+        score_sat_ubs = torch.maximum(left_sat_ubs, right_sat_ubs)
+    select_score = torch.maximum(score_sat_lbs, -score_sat_ubs)
+    # At times splitting bounds that actually influence the output can lead
+    # to slightly worse bounds than splitting an input that does not influence
+    # the output due to floating point error.
+    # To avoid this, we round the scores.
+    select_score = torch.round(select_score, decimals=4)
     # resolve ties in select_scores randomly
     permute = torch.randperm(num_splits, generator=rng, device=rng.device)
     select_score = select_score[permute, :]

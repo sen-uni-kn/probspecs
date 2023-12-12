@@ -30,7 +30,7 @@ class FairSquareV2BaseNN(nn.Module, ABC):
 
 class FairSquareNNV2H1(FairSquareV2BaseNN):
     """
-    Since neuron neural network model from
+    Neuron neural network model from
     https://github.com/sedrews/fairsquare/blob/master/oopsla/noqual/M_ind_F_NN_V2_H1.fr
     """
 
@@ -49,13 +49,14 @@ class FairSquareNNV2H1(FairSquareV2BaseNN):
         scale = self.normalize_scale.to(x.device)
         x_norm = (x - offset) / scale
         h = F.linear(x_norm, self.weight1, self.bias1)
+        h = F.relu(h)
         o = F.linear(h, self.weight2, self.bias2)
-        return o
+        return F.relu(o)
 
 
 class FairSquareNNV2H2(FairSquareV2BaseNN):
     """
-    Since neuron neural network model from
+    Neuron neural network model from
     https://github.com/sedrews/fairsquare/blob/master/oopsla/noqual/M_ind_F_NN_V2_H2.fr
     """
 
@@ -74,13 +75,14 @@ class FairSquareNNV2H2(FairSquareV2BaseNN):
         x = x[:, :2]  # this net only reads age and edu_num
         x_norm = (x - self.normalize_offset) / self.normalize_scale
         h = F.linear(x_norm, self.weight1, self.bias1)
+        h = F.relu(h)
         o = F.linear(h, self.weight2, self.bias2)
-        return o
+        return F.relu(o)
 
 
 class FairSquareNNV3H2(FairSquareV2BaseNN):
     """
-    Since neuron neural network model from
+    Neuron neural network model from
     https://github.com/sedrews/fairsquare/blob/master/oopsla/noqual/M_ind_F_NN_V3_H2.fr
     """
 
@@ -110,5 +112,20 @@ class FairSquareNNV3H2(FairSquareV2BaseNN):
         x = x[:, (0, 1, 3)]  # this net only reads age and edu_num and capital gain
         x_norm = (x - self.normalize_offset) / self.normalize_scale
         h = F.linear(x_norm, self.weight1, self.bias1)
+        h = F.relu(h)
         o = F.linear(h, self.weight2, self.bias2)
-        return o
+        return F.relu(o)
+
+
+class FairSquareTestClassifier(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weight = nn.Parameter(
+            torch.tensor(
+                [[-1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
+            )
+        )
+        self.bias = nn.Parameter(torch.tensor([0.0, 0.0]))
+
+    def forward(self, x):
+        return F.linear(x, self.weight, self.bias)

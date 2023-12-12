@@ -136,7 +136,7 @@ def verify(
                 f"cuda:{i}" for i in range(torch.cuda.device_count())
             )
         else:
-            worker_devices = ("cpu",) * (pmp.cpu_count // 2)
+            worker_devices = ("cpu",) * (mp.cpu_count // 2)
     if not parallel:
         worker_devices = worker_devices[:1]
     worker_devices = [
@@ -146,7 +146,9 @@ def verify(
     worker_processes = []
     bounds_queue = None
     try:
-        if parallel:
+        # if there is just one worker, there is no need to start a separate
+        # process
+        if len(worker_devices) > 1:
             terms_per_worker = ceil(len(requires_bounds) / len(worker_devices))
             remaining_terms = list(requires_bounds)
 

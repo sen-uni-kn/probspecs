@@ -11,7 +11,7 @@ from experiments.fairsquare.classifiers import *
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Verify FairSquare Models")
     parser.add_argument(
-        "-p", "--population-model", choices=("ind", "BN", "BNc"), required=True
+        "-p", "--population-model", choices=("ind", "BN", "BNc", "BNcc"), required=True
     )
     parser.add_argument(
         "-c", "--classifier", choices=("NN_V2H1", "NN_V2H2", "NN_V3H2"), required=True
@@ -28,7 +28,9 @@ if __name__ == "__main__":
         case "BN":
             pop_model = BayesianNetworkPopulationModel()
         case "BNc":
-            raise NotImplementedError()
+            pop_model = BayesianNetworkPopulationModel(integrity_constraint=True)
+        case "BNcc":
+            pop_model = BayesianNetworkPopulationModel(True, True)
         case _:
             raise ValueError()
 
@@ -43,7 +45,7 @@ if __name__ == "__main__":
             raise ValueError()
 
     x = ExternalVariable("x")
-    classifier_func = ExternalFunction("classifier", ("x",))
+    classifier_func = ExternalFunction("classifier", ("z",))
     networks = {"classifier": classifier}
     if pop_model.population_model is not None:
         pop_model_func = ExternalFunction("pop_model", ("x",))
@@ -76,9 +78,9 @@ if __name__ == "__main__":
         networks,
         {"x": pop_model.input_space},
         {"x": pop_model.probability_distribution},
+        batch_size=1024,
         split_heuristic="IBP",
         worker_devices=("cpu",),
-        parallel=False,
     )
     end_time = time()
     print(verification_status)
