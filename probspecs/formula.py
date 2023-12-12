@@ -1,6 +1,5 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
-import dataclasses
 import itertools
 from abc import ABC
 from enum import Enum, auto, unique
@@ -92,6 +91,9 @@ class Formula:
                     raise NotImplementedError()
 
         def __str__(self):
+            return repr(self)
+
+        def __repr__(self):
             match self:
                 case self.NOT:
                     return "¬"
@@ -230,14 +232,14 @@ class Formula:
     def __invert__(self) -> "Formula":
         return Formula(Formula.Operator.NOT, (self,))
 
-    def __str__(self):
+    def __repr__(self):
         if self.op == self.Operator.NOT:
             return f"{self.op}({self.operands[0]})"
 
         def convert_operand(operand):
-            res = str(operand)
+            res = repr(operand)
             if self.op == self.Operator.AND and contains_unbracketed(
-                res, (str(self.Operator.OR),)
+                res, (repr(self.Operator.OR),)
             ):
                 return "(" + res + ")"
             else:
@@ -289,6 +291,9 @@ class Inequality:
                     raise NotImplementedError()
 
         def __str__(self):
+            return repr(self)
+
+        def __repr__(self):
             match self:
                 case self.LESS_EQUAL:
                     return "≤"
@@ -433,7 +438,7 @@ class Inequality:
     def __invert__(self) -> Formula:
         return Formula(Formula.Operator.NOT, (self,))
 
-    def __str__(self):
+    def __repr__(self):
         return f"{self.lhs} {self.op} {self.rhs}"
 
 
@@ -536,6 +541,9 @@ class Expression:
                     raise NotImplementedError()
 
         def __str__(self):
+            return repr(self)
+
+        def __repr__(self):
             match self:
                 case self.ADD:
                     return "+"
@@ -780,14 +788,14 @@ class Expression:
     ) -> "Function":
         return ElementAccess(self, item)
 
-    def __str__(self):
+    def __repr__(self):
         def convert_arg(operand):
-            res = str(operand)
+            res = repr(operand)
             if self.op in (
                 self.Operator.MULTIPLY,
                 self.Operator.DIVIDE,
             ) and contains_unbracketed(
-                res, (str(self.Operator.ADD), str(self.Operator.SUBTRACT))
+                res, (repr(self.Operator.ADD), repr(self.Operator.SUBTRACT))
             ):
                 return "(" + res + ")"
             else:
@@ -973,7 +981,7 @@ class Constant(Function):
     ) -> tuple[TERM_TYPES, ...]:
         return tuple(x for x in (self,) if predicate(x))
 
-    def __str__(self):
+    def __repr__(self):
         return f"{self.val}"
 
 
@@ -1039,8 +1047,8 @@ class ElementAccess(Function):
             matches += self.source.collect(predicate, continue_for_matches)
         return tuple(matches)
 
-    def __str__(self):
-        source_str = str(self.source)
+    def __repr__(self):
+        source_str = repr(self.source)
         if isinstance(self.source, Expression):
             source_str = f"({source_str})"
         return f"{source_str}[{item_to_str(self.target_item)}]"
@@ -1125,7 +1133,7 @@ class Probability(Function):
                 matches += self.condition.collect(predicate, continue_for_matches)
         return tuple(matches)
 
-    def __str__(self):
+    def __repr__(self):
         if self.condition is not None:
             return f"P[{self.subject} | {self.condition}]"
         else:
@@ -1176,7 +1184,7 @@ class ExternalVariable(Function):
     ) -> tuple[TERM_TYPES, ...]:
         return tuple(x for x in (self,) if predicate(x))
 
-    def __str__(self):
+    def __repr__(self):
         return self.name
 
 
@@ -1266,7 +1274,7 @@ class ExternalFunction(Function):
     ) -> tuple[TERM_TYPES, ...]:
         return tuple(x for x in (self,) if predicate(x))
 
-    def __str__(self):
+    def __repr__(self):
         return f"{self.func_name}(" + ", ".join(self.arg_names) + ")"
 
 
@@ -1292,8 +1300,8 @@ class ExplicitFunction(ExternalFunction):
         """
         return self.func
 
-    def __str__(self):
-        return super().__str__()
+    def __repr__(self):
+        return super().__repr__()
 
 
 @dataclass(frozen=True)
@@ -1339,7 +1347,7 @@ class Composition(Function):
                 matches += child.collect(predicate, continue_for_matches)
         return tuple(matches)
 
-    def __str__(self):
+    def __repr__(self):
         if isinstance(self.func, ExternalFunction):
             func_str = self.func.func_name
         else:
