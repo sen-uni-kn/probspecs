@@ -88,7 +88,7 @@ class DiscreteDistribution1d(ProbabilityDistribution):
     def probability(self, event: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
         a, b = event
         min_ = torch.min(a).ceil()
-        max_ = torch.min(b).floor()
+        max_ = torch.max(b).floor()
         # Add 0.1 since arange excludes the end point
         integers = torch.arange(min_, max_ + 0.1, step=1)
         integers = integers.detach().cpu()
@@ -96,7 +96,7 @@ class DiscreteDistribution1d(ProbabilityDistribution):
         probs = torch.as_tensor(probs, device=a.device)
         # reshape a, b and integers for broadcasting
         a = a.reshape(-1, 1)
-        b = a.reshape(-1, 1)
+        b = b.reshape(-1, 1)
         integers = integers.reshape(1, -1).to(a.device)
         selected_probs = torch.where((a <= integers) & (b >= integers), probs, 0.0)
         return selected_probs.sum(dim=1)
