@@ -15,8 +15,7 @@ import torch
 from frozendict import frozendict
 
 from .trinary_logic import TrinaryLogic as TL
-from .utils.string_utils import contains_unbracketed
-
+from .utils.string_utils import contains_unbracketed, item_to_str
 
 __all__ = [
     "Formula",
@@ -1044,7 +1043,7 @@ class ElementAccess(Function):
         source_str = str(self.source)
         if isinstance(self.source, Expression):
             source_str = f"({source_str})"
-        return f"{source_str}[{self.target_item}]"
+        return f"{source_str}[{item_to_str(self.target_item)}]"
 
     def __hash__(self):
         def convert(item: int | slice | tuple[int | slice, ...]):

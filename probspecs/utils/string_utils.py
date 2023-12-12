@@ -19,3 +19,26 @@ def contains_unbracketed(string: str, symbols: tuple[str, ...]):
         if bracket_level == 0 and char in symbols:
             return True
     return False
+
+
+def item_to_str(item: int | slice | tuple[int | slice, ...]):
+    """
+    Formats the argument of :code:`__getitem__` in a nice way, primarily
+    formatting slices the way they are written in code.
+    For example, :code:`1:` becomes `"1:"` instead of `"slice(1, None, None)"`.
+    """
+    if isinstance(item, tuple):
+        return ", ".join(item_to_str(elem) for elem in item)
+    elif isinstance(item, slice):
+        item_str = ""
+        if item.start is not None:
+            item_str += str(item.start)
+        item_str += ":"
+        if item.stop is not None:
+            item_str += str(item.stop)
+        if item.step is not None:
+            item_str += ":"
+            item_str += str(item.step)
+        return item_str
+    else:
+        return str(item)
