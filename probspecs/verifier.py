@@ -8,7 +8,7 @@ from typing import Callable, Literal, Generator
 from time import time
 
 import torch
-import torch.multiprocessing as mp
+import multiprocess as mp  # better multiprocessing using dill for serialization
 
 from .bounds.auto_lirpa_params import AutoLiRPAParams
 from .probability_distribution import ProbabilityDistribution
@@ -136,7 +136,7 @@ def verify(
                 f"cuda:{i}" for i in range(torch.cuda.device_count())
             )
         else:
-            worker_devices = ("cpu",) * (mp.cpu_count // 2)
+            worker_devices = ("cpu",) * (pmp.cpu_count // 2)
     if not parallel:
         worker_devices = worker_devices[:1]
     worker_devices = [
