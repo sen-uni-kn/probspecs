@@ -30,6 +30,7 @@ from probspecs import (
     InputSpace,
 )
 from probspecs.probability_distribution import DiscreteDistribution1d
+import probspecs.operations as ops
 
 AttrT = TabularInputSpace.AttributeType
 
@@ -551,7 +552,7 @@ class _BayesianNetworkPopModel(nn.Module):
             )
 
         if self.clip_outputs:
-            z = torch.clamp(z, min=self.output_mins, max=self.output_maxs)
+            z = ops.clamp(z, min=self.output_mins, max=self.output_maxs)
         return z
 
 

@@ -283,12 +283,6 @@ def probability_bounds(
         prob_ub -= torch.sum(certainly_viol_mask * branches.probability_mass)
         branches.drop(certainly_viol_mask)
 
-        print(probability)
-        print(
-            len(branches), torch.sum(certainly_sat_mask), torch.sum(certainly_viol_mask)
-        )
-        print(prob_lb, prob_ub)
-        print("-" * 80)
         yield (prob_lb, prob_ub)
 
         # this is primarily for the case when apply_symbolic_bounds
