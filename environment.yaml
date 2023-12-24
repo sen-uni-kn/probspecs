@@ -21,3 +21,4 @@ dependencies:
     - frozendict>=2.3.8,<3.0
     - adult-dataset>=1.0.0,<2.0
     - multiprocess==0.70.15
+    - jupyter
