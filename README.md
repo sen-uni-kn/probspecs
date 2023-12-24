@@ -14,7 +14,7 @@
    ```
  - Install `auto_LiRPA` using
    ```shell
-   git sumbodule update --init  # pull auto_LiRPA if not already present
+   git submodule update --init  # pull auto_LiRPA if not already present
    conda activate YOUR_PREFERRED_ENVIRONENT_NAME
    cd auto_LiRPA
    python setup.py install
