@@ -76,7 +76,7 @@ if __name__ == "__main__":
 
         def __call__(self, x):
             x = x.flatten(1)
-            for (lin, bn) in zip([self.lin1, self.lin2], [self.bn1, self.bn2]):
+            for lin, bn in zip([self.lin1, self.lin2], [self.bn1, self.bn2]):
                 x = lin(x)
                 x = bn(x.unsqueeze(-1)).squeeze(-1)
                 x = self.leaky_relu(x)
@@ -132,7 +132,6 @@ if __name__ == "__main__":
     label_flip_prob = torch.full((batch_size,), disc_label_noise, device=device)
     for epoch in range(epochs):
         for i in range(num_iters):
-
             disc_error_real = disc_error_fake = 1.0
             for i_disc in range(discriminator_updates):
                 disc_optim.zero_grad()

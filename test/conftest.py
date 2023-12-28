@@ -125,7 +125,7 @@ def verification_test_mnist_fcnn_gen(resource_dir):
 
         def __call__(self, x):
             x = x.flatten(1)
-            for (lin, bn) in zip([self.lin1, self.lin2], [self.bn1, self.bn2]):
+            for lin, bn in zip([self.lin1, self.lin2], [self.bn1, self.bn2]):
                 x = lin(x)
                 x = bn(x.unsqueeze(-1)).squeeze(-1)
                 x = self.leaky_relu(x)
