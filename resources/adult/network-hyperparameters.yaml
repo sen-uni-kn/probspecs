@@ -1,0 +1,8 @@
+layer_size_0: 246
+lr: 0.0030078645119140123
+lr_gamma: 0.1076458182025955
+lr_milestone_1: 844
+lr_milestone_2: 1047
+num_epochs: 13
+num_layers: 1
+random_seed: 431409684549184
