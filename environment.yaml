@@ -16,6 +16,7 @@ dependencies:
   - ninja=1.10.*
   - tqdm=4.65.*
   - seaborn=0.12.2
+  - pandas=2.1.4
   - pip
   - pip:
     - pytest-order>=1.1.0,<1.2.0

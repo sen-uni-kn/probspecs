@@ -26,7 +26,7 @@ adult_input_space = TabularInputSpace(
     data_types={
         "age": _CONT,
         "workclass": _CAT,
-        "fnlwgt": _ORD,
+        "fnlwgt": _CONT,
         "education": _CAT,
         "education-num": _CONT,
         "marital-status": _CAT,
@@ -40,13 +40,14 @@ adult_input_space = TabularInputSpace(
         "native-country": _CAT,
     },
     continuous_ranges={
-        "age": (0.0, 125.0),
-        "education-num": (0.0, 125.0),
+        "age": (17.0, 90.0),
+        "fnlwgt": (10000.0, 1500000.0),
+        "education-num": (1.0, 16.0),
         "capital-gain": (0.0, 99999.0),
-        "capital-loss": (0.0, 99999.0),
+        "capital-loss": (0.0, 5000.0),
         "hours-per-week": (1.0, 99.0),
     },
-    ordinal_ranges={"fnlwgt": (0, 6)},
+    ordinal_ranges={},
     categorical_values={
         "workclass": (
             "Private",
