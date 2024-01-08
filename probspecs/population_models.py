@@ -114,3 +114,47 @@ class EncodeOneHot(nn.Module):
         one_hot_upper = torch.heaviside(one_hot_upper, self.one)
         one_hot = one_hot_lower - one_hot_upper
         return others + one_hot
+
+
+class Normalize(nn.Module):
+    """
+    Applies z-score normalization.
+
+    Subtracts a fixed mean vector and divides by a fixed standard deviation vector.
+    """
+
+    def __init__(self, mean: torch.Tensor, std: torch.Tensor):
+        super().__init__()
+        self.register_buffer("mean", mean)
+        self.register_buffer("std", std)
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        return (x - self.mean) / self.std
+
+
+class Denormalize(nn.Module):
+    """
+    Reverts a z-score normalization.
+
+    Multiplies by a fixed standard deviation vector and adds a fixed mean vector.
+    """
+
+    def __init__(self, mean: torch.Tensor, std: torch.Tensor):
+        super().__init__()
+        self.register_buffer("mean", mean)
+        self.register_buffer("std", std)
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        return x * self.std + self.mean
+
+
+class Identity(nn.Linear):
+    """
+    An identity transformation.
+    Serves for avoiding issues with AutoLiRPA by providing
+    explicit shape information.
+    """
+
+    def __init__(self, num_features: int):
+        super().__init__(num_features, num_features, bias=False)
+        self.weight = nn.Parameter(torch.eye(num_features))

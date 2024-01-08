@@ -5,9 +5,6 @@ from math import prod
 from typing import Protocol, runtime_checkable
 
 import torch
-import numpy as np
-import scipy.integrate
-from frozendict import frozendict
 
 
 @runtime_checkable

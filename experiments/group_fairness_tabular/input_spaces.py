@@ -56,7 +56,7 @@ adult_input_space = TabularInputSpace(
             "Local-gov",
             "State-gov",
             "Without-pay",
-            "Never-worked",
+            # "Never-worked",  # does not appear in (cleaned) dataset
         ),
         "education": (
             "Bachelors",

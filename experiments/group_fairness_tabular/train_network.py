@@ -51,7 +51,7 @@ if __name__ == "__main__":
     )
     tuning_save_reuse = parser.add_mutually_exclusive_group()
     tuning_save_reuse.add_argument(
-        "--save-to",
+        "--save-hyperparameters",
         default=None,
         help="Where to save the result of hyperparameter tuning. "
         "By default, the results are not saved.",
@@ -70,7 +70,7 @@ if __name__ == "__main__":
             train_set = Adult(root=".datasets", train=True, download=True)
             test_set = Adult(root=".datasets", train=False, download=True)
             num_classes = 2
-            class_weights = (0.75, 0.25)
+            class_weights = torch.tensor((0.25, 0.75))
         case _:
             raise ValueError(f"Unknown dataset: {args.dataset}.")
 
@@ -122,7 +122,7 @@ if __name__ == "__main__":
             milestones=(lr_milestone_1, lr_milestone_1 + lr_milestone_2),
             gamma=lr_gamma,
         )
-        loss_function = nn.CrossEntropyLoss(weight=torch.tensor(class_weights))
+        loss_function = nn.CrossEntropyLoss(weight=class_weights)
 
         full_train_loader = DataLoader(train_set, batch_size=len(train_set))
         full_val_loader = DataLoader(val_set, batch_size=len(val_set))
@@ -190,7 +190,7 @@ if __name__ == "__main__":
         )
         best_params = study.best_params
 
-        if args.save_to is not None:
+        if args.save_hyperparameters is not None:
             with open(args.save_to, "wt") as param_file:
                 print(f"Saving hyperparameters in {args.save_to}.")
                 safe_dump(best_params, param_file)

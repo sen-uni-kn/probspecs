@@ -336,6 +336,9 @@ def probability_bounds(
         sat_lbs, sat_ubs = sat_bounds(variable_bounds)
         prob_mass = probability_mass(variable_bounds)
 
+        print(sat_lbs, sat_ubs)
+        print(len(branches))
+
         # 5. Update branches
         branches.append(
             in_lbs=new_lbs,

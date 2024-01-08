@@ -7,6 +7,7 @@ from .input_space import InputSpace, TabularInputSpace, TensorInputSpace
 from .probability_distribution import (
     ProbabilityDistribution,
     ContinuousDistribution1d,
+    DiscreteDistribution1d,
     MultidimensionalIndependent,
 )
 from .verifier import verify
