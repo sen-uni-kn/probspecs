@@ -22,7 +22,7 @@ from ..formula import (
     Formula,
     ElementAccess,
 )
-from ..probability_distribution import ProbabilityDistribution
+from ..distributions.probability_distribution import ProbabilityDistribution
 from ..input_space import (
     InputSpace,
     TensorInputSpace,

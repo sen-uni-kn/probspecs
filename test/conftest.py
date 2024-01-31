@@ -4,16 +4,28 @@ import scipy.stats
 import torch
 from torch import nn
 import numpy as np
+import random
 from pathlib import Path
 
-from probspecs import TensorInputSpace
-from probspecs.probability_distribution import (
+from probspecs import (
+    TensorInputSpace,
     ContinuousDistribution1d,
     MultidimensionalIndependent,
 )
 
-
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def seed_rngs():
+    """
+    Reproducibility fallback.
+    Tests should still seed the RNGs they use to avoid testing
+    always with the same random numbers.
+    """
+    torch.manual_seed(0)
+    np.random.seed(0)
+    random.seed(0)
 
 
 @pytest.fixture

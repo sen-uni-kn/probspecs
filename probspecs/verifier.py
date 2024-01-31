@@ -11,7 +11,7 @@ import torch
 import multiprocess as mp  # better multiprocessing using dill for serialization
 
 from .bounds.auto_lirpa_params import AutoLiRPAParams
-from .probability_distribution import ProbabilityDistribution
+from .distributions.probability_distribution import ProbabilityDistribution
 from .input_space import InputSpace
 from .formula import (
     Formula,

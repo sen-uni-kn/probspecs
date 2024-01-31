@@ -28,8 +28,8 @@ from probspecs import (
     MultidimensionalIndependent,
     ProbabilityDistribution,
     InputSpace,
+    DiscreteDistribution1d,
 )
-from probspecs.probability_distribution import DiscreteDistribution1d
 import probspecs.operations as ops
 
 AttrT = TabularInputSpace.AttributeType
