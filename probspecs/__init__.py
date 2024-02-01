@@ -9,5 +9,6 @@ from .distributions.single_dimension import (
     ContinuousDistribution1d,
     DiscreteDistribution1d,
 )
+from .distributions.one_hot import CategoricalOneHot
 from .distributions.mixture import MixtureModel1d
 from .verifier import verify

@@ -45,10 +45,31 @@ class CategoricalOneHot(ProbabilityDistribution):
             )
         if not torch.isclose(torch.sum(probabilities), torch.ones(())):
             raise ValueError(f"probabilities must sum to one. Got: {probabilities}")
+
+        self.__probabilities = probabilities.flatten()
+        # Each row of weighted_values is a one-hot encoded vector
+        # It has shape (1, n, n), as this is useful when computing probabilities
+        self.__values = torch.eye(self.__probabilities.size(0)).unsqueeze(0)
         self.__multinomial = multinomial(n=1, p=probabilities.detach().numpy())
 
     def probability(self, event: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
-        pass  # TODO
+        # shape of a and b is (N, n), where N is the batch size and n is the number
+        # of categories / the size of self.__probabilities
+        a, b = event
+        a = a.unsqueeze(-1)
+        b = b.unsqueeze(-1)
+        # value_contained has shape (N, n, n), where entry (i, j, k)
+        # determines whether in batch element i one-hot vector with 1.0 at position k
+        # is contained in [a, b] in dimension j.
+        value_contained = (a <= self.__values) & (self.__values <= b)
+        # a one-hot vector is only contained in event if it is contained
+        # in all dimensions => reduce the j-dimension (see last comment)
+        value_contained = value_contained.all(dim=-2)
+        # weight contained values with their probabilities and sum over values
+        value_probs = self.__probabilities.to(value_contained.device)
+        value_contained = value_contained.to(value_probs.dtype)
+        prob = torch.sum(value_contained * value_probs, dim=-1)
+        return prob
 
     # MARK: scipy-like methods
 
@@ -62,7 +83,6 @@ class CategoricalOneHot(ProbabilityDistribution):
 
     def logpmf(self, x: torch.Tensor) -> torch.Tensor:
         return torch.as_tensor(self.__multinomial.logpmf(x))
-)
 
     def entropy(self) -> torch.Tensor:
         return torch.as_tensor(self.__multinomial.entropy())
