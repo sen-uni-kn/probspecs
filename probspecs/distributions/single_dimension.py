@@ -64,5 +64,5 @@ class DiscreteDistribution1d(ProbabilityDistribution):
         a = a.reshape(-1, 1)
         b = b.reshape(-1, 1)
         integers = integers.reshape(1, -1).to(a.device)
-        selected_probs = torch.where((a <= integers) & (b >= integers), probs, 0.0)
+        selected_probs = torch.where((a <= integers) & (integers <= b), probs, 0.0)
         return selected_probs.sum(dim=1)
