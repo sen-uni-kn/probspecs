@@ -56,6 +56,9 @@ def test_tabular_space_base(mtcars):
     assert in_space.attribute_type(1) == cat
     assert in_space.attribute_type(2) == cont
 
+    assert in_space.attribute_type("mpg") == cont
+    assert in_space.attribute_type("vs") == cat
+
     assert in_space.input_shape == (8,)
 
 
@@ -78,7 +81,9 @@ def test_tabular_space_bounds(mtcars):
 def test_tabular_space_values(mtcars):
     in_space = mtcars
     assert in_space.attribute_values(4) == ("V", "straight")
+    assert in_space.attribute_values("vs") == ("V", "straight")
     assert in_space.attribute_values(3) == tuple(range(52, 335 + 1))
+    assert in_space.attribute_values("hp") == tuple(range(52, 335 + 1))
     with pytest.raises(ValueError):
         in_space.attribute_values(0)
 

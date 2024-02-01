@@ -93,6 +93,7 @@ class TabularInputSpace(InputSpace):
             )
             for attr_name in attributes
         )
+        self.__name_to_index = {attr_name: i for i, attr_name in enumerate(attributes)}
 
     @property
     def attribute_names(self) -> tuple[str, ...]:
@@ -117,33 +118,44 @@ class TabularInputSpace(InputSpace):
         """
         return self.__attributes[index][0]
 
-    def attribute_type(self, index: int) -> AttributeType:
+    def attribute_type(self, index: int | str) -> AttributeType:
         """
         The type of the i-th attribute.
 
-        :param index: The index of the attribute (i).
+        :param index: The index of the attribute (i) or the
+         name of the attribute.
         """
+        if isinstance(index, str):
+            index = self.__name_to_index[index]
         return self.__attributes[index][1]
 
-    def attribute_bounds(self, index: int) -> tuple[float, float]:
+    def attribute_bounds(self, index: int | str) -> tuple[float, float]:
         """
         The input bounds of the i-th attribute (continuous or ordinal).
 
-        :param index: The index of the attribute (i).
+        :param index: The index of the attribute (i) or the
+         name of the attribute.
         :raises ValueError: If the i-th attribute isn't continuous or ordinal.
         """
+        if isinstance(index, str):
+            index = self.__name_to_index[index]
+
         attr_name, attr_type, attr_info = self.__attributes[index]
         if attr_type not in (self.AttributeType.CONTINUOUS, self.AttributeType.ORDINAL):
             raise ValueError(f"Attribute {attr_name} has no input bounds.")
         return attr_info
 
-    def attribute_values(self, index: int) -> tuple[str | int, ...]:
+    def attribute_values(self, index: int | str) -> tuple[str | int, ...]:
         """
         The permitted values of the i-th attribute (categorical or ordinal).
 
-        :param index: The index of the attribute (i).
+        :param index: The index of the attribute (i) or the
+         name of the attribute.
         :raises ValueError: If the i-th attribute isn't categorical or ordinal.
         """
+        if isinstance(index, str):
+            index = self.__name_to_index[index]
+
         attr_name, attr_type, attr_info = self.__attributes[index]
         if attr_type not in (
             self.AttributeType.CATEGORICAL,
