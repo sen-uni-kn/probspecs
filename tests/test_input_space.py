@@ -1,8 +1,6 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
 import pytest
-from pytest import approx
-
 import torch
 
 from probspecs import TensorInputSpace, TabularInputSpace

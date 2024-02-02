@@ -1,5 +1,6 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
+from functools import reduce
 from typing import Sequence
 
 import numpy as np
@@ -8,12 +9,12 @@ import sklearn.mixture
 import torch
 
 from .probability_distribution import ProbabilityDistribution
-from .single_dimension import ContinuousDistribution1d
+from .single_dimension import UnivariateContinuousDistribution
 
 
-class MixtureModel1d(ProbabilityDistribution):
+class MixtureModel(ProbabilityDistribution):
     """
-    A 1d probability distribution that is represented by a mixture model,
+    A probability distribution that is represented by a mixture model,
     for example, a Gaussian mixture model.
 
     When sampling a mixture model, the mixture model first randomly selects
@@ -34,6 +35,24 @@ class MixtureModel1d(ProbabilityDistribution):
         weights: Sequence[float] | np.ndarray | torch.Tensor,
         distributions: Sequence[ProbabilityDistribution],
     ):
+        """
+        Creates a new :code:`MixtureModel`.
+
+        :param weights: The weights of the individual mixture components.
+        :param distributions: The mixture components.
+         All mixture components need to have the same event shape.
+        """
+        if len(distributions) == 0:
+            raise ValueError("MixtureModel requires at least one component.")
+        event_shape = distributions[0].event_shape
+        for distribution in distributions[1:]:
+            if distribution.event_shape != event_shape:
+                raise ValueError(
+                    f"Shape mismatch: all distributions must have the same shape. "
+                    f"Got {event_shape} and {distribution.event_shape}"
+                )
+        self.__event_shape = event_shape
+
         if isinstance(weights, np.ndarray | torch.Tensor):
             weights = torch.as_tensor(weights)
         else:
@@ -46,14 +65,15 @@ class MixtureModel1d(ProbabilityDistribution):
             raise ValueError(
                 "weights and distributions must have the same number of elements."
             )
+
         self.__weights = weights
         self.__distributions = tuple(distributions)
 
     @staticmethod
     def from_gaussian_mixture(mixture: sklearn.mixture.GaussianMixture):
         """
-        Create a :code:`MixtureModel1d` distribution from a
-        sklearn Gaussian mixture model.
+        Create a univariante (1d) :code:`MixtureModel` distribution from a
+        univariate sklearn Gaussian mixture model.
 
         :param mixture: The Gaussian mixture model.
          This needs to be a 1d model, which reflects in :code:`mixture.means_`
@@ -80,8 +100,10 @@ class MixtureModel1d(ProbabilityDistribution):
             norm(loc=mixture.means_[i, 0], scale=covariances[i])
             for i in range(n_components)
         )
-        distributions = tuple(ContinuousDistribution1d(d) for d in distributions)
-        return MixtureModel1d(mixture.weights_, distributions)
+        distributions = tuple(
+            UnivariateContinuousDistribution(d) for d in distributions
+        )
+        return MixtureModel(mixture.weights_, distributions)
 
     @property
     def weights(self) -> torch.Tensor:
@@ -97,3 +119,7 @@ class MixtureModel1d(ProbabilityDistribution):
         )
         weighted = (w * p for w, p in zip(self.weights, component_probs))
         return sum(weighted)
+
+    @property
+    def event_shape(self) -> torch.Size:
+        return self.__event_shape

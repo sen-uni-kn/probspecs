@@ -5,18 +5,18 @@ import torch
 from sklearn.mixture import GaussianMixture
 from scipy.stats import norm
 
-from probspecs.distributions import MixtureModel1d, ContinuousDistribution1d
+from probspecs.distributions import MixtureModel, UnivariateContinuousDistribution
 
 import pytest
 
 
 @pytest.fixture
 def mixture_model_1():
-    return MixtureModel1d(
+    return MixtureModel(
         weights=[0.7, 0.3],
         distributions=(
-            ContinuousDistribution1d(norm(loc=-10, scale=1)),
-            ContinuousDistribution1d(norm(loc=10, scale=1)),
+            UnivariateContinuousDistribution(norm(loc=-10, scale=1)),
+            UnivariateContinuousDistribution(norm(loc=10, scale=1)),
         ),
     )
 
@@ -29,7 +29,7 @@ def test_from_gaussian_mixture():
     gmm = GaussianMixture(n_components=3)
     gmm.fit(data)
 
-    distribution = MixtureModel1d.from_gaussian_mixture(gmm)
+    distribution = MixtureModel.from_gaussian_mixture(gmm)
     print(distribution.weights, distribution.distributions)
 
 

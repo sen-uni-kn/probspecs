@@ -24,11 +24,11 @@ from scipy.stats import norm, bernoulli
 
 from probspecs import (
     TabularInputSpace,
-    ContinuousDistribution1d,
-    MultidimensionalIndependent,
+    UnivariateContinuousDistribution,
+    MultivariateIndependent,
     ProbabilityDistribution,
     InputSpace,
-    DiscreteDistribution1d,
+    UnivariateDiscreteDistribution,
 )
 import probspecs.operations as ops
 
@@ -78,28 +78,32 @@ class IndependentPopulationModel:
 
     @property
     def probability_distribution(self) -> ProbabilityDistribution:
-        age_distr = ContinuousDistribution1d(norm(loc=38.5816, scale=sqrt(186.0614)))
-        edu_num_distr = ContinuousDistribution1d(norm(loc=10.0806, scale=sqrt(6.6188)))
-        sex_distr = DiscreteDistribution1d(
+        age_distr = UnivariateContinuousDistribution(
+            norm(loc=38.5816, scale=sqrt(186.0614))
+        )
+        edu_num_distr = UnivariateContinuousDistribution(
+            norm(loc=10.0806, scale=sqrt(6.6188))
+        )
+        sex_distr = UnivariateDiscreteDistribution(
             bernoulli(0.6693)
         )  # 67% males in the dataset
-        capital_gain = ContinuousDistribution1d(
+        capital_gain = UnivariateContinuousDistribution(
             norm(loc=1077.6488, scale=sqrt(54542539.1784))
         )
-        capital_loss = ContinuousDistribution1d(
+        capital_loss = UnivariateContinuousDistribution(
             norm(loc=87.3038, scale=sqrt(162376.9378))
         )
-        hours_per_week = ContinuousDistribution1d(
+        hours_per_week = UnivariateContinuousDistribution(
             norm(loc=40.4374, scale=sqrt(152.4589))
         )
-        return MultidimensionalIndependent(
+        return MultivariateIndependent(
             age_distr,
             edu_num_distr,
             sex_distr,
             capital_gain,
             capital_loss,
             hours_per_week,
-            input_shape=(6,),
+            event_shape=(6,),
         )
 
     @property
@@ -571,21 +575,21 @@ class BayesianNetworkPopulationModel:
     @property
     def probability_distribution(self) -> ProbabilityDistribution:
         # 67% males in the dataset
-        sex_distr = DiscreteDistribution1d(bernoulli(0.6693))
+        sex_distr = UnivariateDiscreteDistribution(bernoulli(0.6693))
         # distributions are rescaled by the population model.
-        age_distr = ContinuousDistribution1d(norm(loc=0.0, scale=1.0))
-        edu_num_distr = ContinuousDistribution1d(norm(loc=0.0, scale=1.0))
-        capital_gain = ContinuousDistribution1d(norm(loc=0.0, scale=1.0))
-        capital_loss = ContinuousDistribution1d(norm(loc=0.0, scale=1.0))
-        hours_per_week = ContinuousDistribution1d(norm(loc=0.0, scale=1.0))
-        return MultidimensionalIndependent(
+        age_distr = UnivariateContinuousDistribution(norm(loc=0.0, scale=1.0))
+        edu_num_distr = UnivariateContinuousDistribution(norm(loc=0.0, scale=1.0))
+        capital_gain = UnivariateContinuousDistribution(norm(loc=0.0, scale=1.0))
+        capital_loss = UnivariateContinuousDistribution(norm(loc=0.0, scale=1.0))
+        hours_per_week = UnivariateContinuousDistribution(norm(loc=0.0, scale=1.0))
+        return MultivariateIndependent(
             age_distr,
             edu_num_distr,
             sex_distr,
             capital_gain,
             capital_loss,
             hours_per_week,
-            input_shape=(6,),
+            event_shape=(6,),
         )
 
     @property

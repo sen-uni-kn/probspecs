@@ -9,7 +9,8 @@ import torch
 @runtime_checkable
 class ProbabilityDistribution(Protocol):
     """
-    A multivariate discrete, continuous, or mixed probability distribution.
+    A (potentially multivariate) discrete, continuous, or mixed
+    probability distribution.
     """
 
     @abstractmethod
@@ -26,8 +27,29 @@ class ProbabilityDistribution(Protocol):
           the hyper-rectangle in all dimensions.
           The :code:`event` may also be a batch of hyper-rectangles.
           Generally, expect both the lower-left corner tensor and the
-          upper-right corner tensors to have a batch dimension-
+          upper-right corner tensors to have a batch dimension.
         :return: The probability of the :code:`event`.
          If :code:`event` is batched, returns a vector of probabilities.
         """
         raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def event_shape(self) -> torch.Size:
+        """
+        The tensor shape of the elementary events underlying this
+        probability distribution.
+
+        :return: The shape of an elementary event.
+        """
+        raise NotImplementedError()
+
+
+class UnivarianteDistribution(ProbabilityDistribution, Protocol):
+    """
+    A univariante (one-dimensional/single variable) probability distribution.
+    """
+
+    @property
+    def event_shape(self) -> torch.Size:
+        return torch.Size((1,))

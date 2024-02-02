@@ -9,8 +9,8 @@ from pathlib import Path
 
 from probspecs import (
     TensorInputSpace,
-    ContinuousDistribution1d,
-    MultidimensionalIndependent,
+    UnivariateContinuousDistribution,
+    MultivariateIndependent,
 )
 
 import pytest
@@ -53,7 +53,7 @@ def verification_test_nets_1d():
         lbs=torch.tensor([-10.0]),
         ubs=torch.tensor([10.0]),
     )
-    distribution = ContinuousDistribution1d(scipy.stats.norm)
+    distribution = UnivariateContinuousDistribution(scipy.stats.norm)
 
     # binary classifier
     # net produces the first class if the input is >= 0.0
@@ -92,8 +92,8 @@ def verification_test_compose():
         lbs=torch.full((2,), fill_value=-10.0),
         ubs=torch.full((2,), fill_value=10.0),
     )
-    distrs = [ContinuousDistribution1d(scipy.stats.norm) for i in range(2)]
-    distribution = MultidimensionalIndependent(*distrs, input_shape=(2,))
+    distrs = [UnivariateContinuousDistribution(scipy.stats.norm) for i in range(2)]
+    distribution = MultivariateIndependent(*distrs, event_shape=(2,))
 
     generator = nn.Sequential(
         nn.Linear(2, 10, bias=False),
@@ -121,9 +121,10 @@ def verification_test_mnist_fcnn_gen(resource_dir):
     means = np.random.rand(4) * 2 - 1
     stds = np.random.rand(4) * 1
     distrs = [
-        ContinuousDistribution1d(scipy.stats.norm(means[i], stds[i])) for i in range(4)
+        UnivariateContinuousDistribution(scipy.stats.norm(means[i], stds[i]))
+        for i in range(4)
     ]
-    distribution = MultidimensionalIndependent(*distrs, input_shape=(4,))
+    distribution = MultivariateIndependent(*distrs, event_shape=(4,))
 
     class Generator(nn.Module):
         def __init__(self):
@@ -169,9 +170,10 @@ def verification_test_mnist_conv_gen(resource_dir):
     means = np.random.rand(4) * 2 - 1
     stds = np.random.rand(4) * 1
     distrs = [
-        ContinuousDistribution1d(scipy.stats.norm(means[i], stds[i])) for i in range(4)
+        UnivariateContinuousDistribution(scipy.stats.norm(means[i], stds[i]))
+        for i in range(4)
     ]
-    distribution = MultidimensionalIndependent(*distrs, input_shape=(4, 1, 1))
+    distribution = MultivariateIndependent(*distrs, event_shape=(4, 1, 1))
 
     generator = torch.load(resource_dir / "mnist_conv_generator.pyt")
     generator.eval()

@@ -1,5 +1,8 @@
 from .probability_distribution import ProbabilityDistribution
-from .single_dimension import ContinuousDistribution1d, DiscreteDistribution1d
+from .single_dimension import (
+    UnivariateContinuousDistribution,
+    UnivariateDiscreteDistribution,
+)
 from .one_hot import CategoricalOneHot
-from .multidimensional import MultidimensionalIndependent
-from .mixture import MixtureModel1d
+from .multivariate import MultivariateIndependent
+from .mixture import MixtureModel

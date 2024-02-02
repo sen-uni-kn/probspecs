@@ -1,6 +1,5 @@
 #  Copyright (c) 2024. David Boetius
 #  Licensed under the MIT License
-import scipy.stats
 from scipy.stats import multinomial
 import torch
 
@@ -70,6 +69,10 @@ class CategoricalOneHot(ProbabilityDistribution):
         value_contained = value_contained.to(value_probs.dtype)
         prob = torch.sum(value_contained * value_probs, dim=-1)
         return prob
+
+    @property
+    def event_shape(self) -> torch.Size:
+        return self.__probabilities.shape
 
     # MARK: scipy-like methods
 

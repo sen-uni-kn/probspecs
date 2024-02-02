@@ -1,12 +1,13 @@
 import torch
 
-from .probability_distribution import ProbabilityDistribution
+from .probability_distribution import UnivarianteDistribution
 
 
-class ContinuousDistribution1d(ProbabilityDistribution):
+class UnivariateContinuousDistribution(UnivarianteDistribution):
     """
-    Wraps a continuous 1d probability distribution that allows evaluating
-    the cumulative distribution function (cdf) as a :class:`ProbabilityDistribution`.
+    Wraps a continuous univariante (1d) probability distribution that
+    allows evaluating the cumulative distribution function (cdf)
+    as a :class:`ProbabilityDistribution`.
 
     The probability of interval :math:`[a, b]` is computed
     as :math:`cdf(b) - cdf(a)`.
@@ -15,7 +16,7 @@ class ContinuousDistribution1d(ProbabilityDistribution):
     of tensors (for example, scipy.stats distributions), the result
     is wrapped as a tensor.
     Consequently, this class can be used to leverage scipy distributions.
-    Example: :code:`Distribution1d(scipy.stats.norm)`
+    Example: :code:`UnivariateContinuousDistribution(scipy.stats.norm)`
     """
 
     def __init__(self, distribution):
@@ -24,8 +25,8 @@ class ContinuousDistribution1d(ProbabilityDistribution):
     def probability(self, event: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
         a, b = event
         orig_device = a.device
-        a = a.detach().cpu()
-        b = b.detach().cpu()
+        a = a.detach().flatten().cpu()
+        b = b.detach().flatten().cpu()
         cdf_high = self.__distribution.cdf(b)
         cdf_low = self.__distribution.cdf(a)
         prob = cdf_high - cdf_low
@@ -33,9 +34,9 @@ class ContinuousDistribution1d(ProbabilityDistribution):
         return prob
 
 
-class DiscreteDistribution1d(ProbabilityDistribution):
+class UnivariateDiscreteDistribution(UnivarianteDistribution):
     """
-    Wraps a discrete 1d probability distribution that allows provides a
+    Wraps a discrete univariate (1d) probability distribution that provides a
     probability mass function (pmf) as a :class:`ProbabilityDistribution`.
 
     The probability of an interval :math:`[a, b]` is computed as the sum of
@@ -45,7 +46,7 @@ class DiscreteDistribution1d(ProbabilityDistribution):
     of tensors (for example, scipy.stats distributions), the result
     is wrapped as a tensor.
     Consequently, this class can be used to leverage scipy distributions.
-    Example: :code:`Distribution1d(scipy.stats.bernoulli)`
+    Example: :code:`UnivariateDiscreteDistribution(scipy.stats.bernoulli)`
     """
 
     def __init__(self, distribution):
