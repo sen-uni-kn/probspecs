@@ -68,6 +68,9 @@ class TrinaryLogic(int):
         And-connects several :code:`TrinaryLogic` instances or the elements of several
         arrays or tensors of :code:`TrinaryLogic` instances (or corresponding integers).
         """
+        if len(values) == 0:
+            return TrinaryLogic.TRUE
+
         any_unknown = values[0] == 0
         all_true = values[0] == 1
         for value in values[1:]:
@@ -84,6 +87,9 @@ class TrinaryLogic(int):
         Or-connects several :code:`TrinaryLogic` instances or the elements of several
         arrays or tensors of :code:`TrinaryLogic` instances (or corresponding integers).
         """
+        if len(values) == 0:
+            return TrinaryLogic.FALSE
+
         any_unknown = values[0] == 0
         any_true = values[0] == 1
         for value in values[1:]:

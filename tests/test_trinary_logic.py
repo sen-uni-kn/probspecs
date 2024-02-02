@@ -94,6 +94,7 @@ def test_not_batched(tensor, all_):
         ((TL.TRUE,) * 100, TL.TRUE),
         ((TL.TRUE,) * 15 + (TL.FALSE,) * 2 + (TL.TRUE,) * 9, TL.FALSE),
         ((TL.UNKNOWN,) + (TL.TRUE,) * 72 + (TL.FALSE,) * 2, TL.UNKNOWN),
+        ((), TL.TRUE),
     ],
 )
 def test_and_(values, expected_result):
@@ -150,6 +151,7 @@ def test_and_batched_2(tensor, all_):
         ((TL.FALSE,) * 100, TL.FALSE),
         ((TL.TRUE,) * 15 + (TL.FALSE,) * 2 + (TL.TRUE,) * 9, TL.TRUE),
         ((TL.UNKNOWN,) + (TL.TRUE,) * 72 + (TL.FALSE,) * 2, TL.UNKNOWN),
+        ((), TL.FALSE),
     ],
 )
 def test_or_(values, expected_result):

@@ -12,6 +12,7 @@ from auto_LiRPA import BoundedModule
 
 from .auto_lirpa_params import AutoLiRPAParams
 from .branch_store import BranchStore
+from ..trinary_logic import TrinaryLogic
 from ..formula import (
     ExternalFunction,
     Function,
@@ -223,15 +224,27 @@ def probability_bounds(
     def sat_bounds(
         var_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]],
         method: str = auto_lirpa_params.method,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Returns lower and upper bounds on the satisfaction function
+        (first two tensors) and a tensor of trinary truth values indicating
+        whether :code:`subj_skeleton` is satisfied.
+
+        The additional trinary logic values are useful, as a satisfaction function
+        value of 0.0 is inconclusive.
+        """
         intermediate_bounds = {
             subs_names[term]: propagate_bounds(term, var_bounds, method)
             for term in requires_bounds
         }
         sat_lb_, sat_ub_ = subj_skeleton_sat_fn.propagate_bounds(**intermediate_bounds)
+        is_sat = subj_skeleton.propagate_bounds(**intermediate_bounds)
+        if not isinstance(is_sat, torch.Tensor):
+            is_sat = torch.tensor([is_sat])
         sat_lb_ = sat_lb_.to(device=device)
         sat_ub_ = sat_ub_.to(device=device)
-        return sat_lb_, sat_ub_
+        is_sat = is_sat.to(device=device)
+        return sat_lb_, sat_ub_, is_sat
 
     @torch.no_grad()
     def probability_mass(
@@ -246,10 +259,11 @@ def probability_bounds(
     branches = BranchStore(
         in_shape=full_input_space.input_shape,
         out_shape=(1,),  # a satisfaction score
+        is_sat=(1,),  # trinary logic values for actual satisfaction
         probability_mass=(1,),
         device=device,
     )
-    sat_lb, sat_ub = sat_bounds(variable_bounds)
+    sat_lb, sat_ub, is_sat = sat_bounds(variable_bounds)
     prob_mass = probability_mass(variable_bounds)
     in_lbs = {var: lbs for var, (lbs, _) in variable_bounds.items()}
     in_ubs = {var: ubs for var, (_, ubs) in variable_bounds.items()}
@@ -258,6 +272,7 @@ def probability_bounds(
         in_ubs=full_input_space.combine(**in_ubs),
         out_lbs=sat_lb,
         out_ubs=sat_ub,
+        is_sat=is_sat,
         probability_mass=prob_mass,
     )
 
@@ -275,11 +290,11 @@ def probability_bounds(
         # 0. Remove branches where subj is certainly satisfied or certainly violated.
         # For certainly violated branches, add their probability mass to prob_lb and
         # remove the branches.
-        certainly_sat_mask = branches.out_lbs > 0
+        certainly_sat_mask = TrinaryLogic.is_true(branches.is_sat)
         prob_lb += torch.sum(certainly_sat_mask * branches.probability_mass)
         branches.drop(certainly_sat_mask)
         # Remove certainly violated branches.
-        certainly_viol_mask = branches.out_ubs < 0
+        certainly_viol_mask = TrinaryLogic.is_false(branches.is_sat)
         prob_ub -= torch.sum(certainly_viol_mask * branches.probability_mass)
         branches.drop(certainly_viol_mask)
 
@@ -305,7 +320,7 @@ def probability_bounds(
             splits = smart_branching(
                 selected_branches,
                 full_input_space,
-                sat_bounds,
+                lambda *args: sat_bounds(*args)[:2],
                 method=split_heuristic.upper(),
                 rng=split_heuristic_rng,
                 **split_heuristic_params,
@@ -333,7 +348,7 @@ def probability_bounds(
         in_lbs = full_input_space.decompose(new_lbs)
         in_ubs = full_input_space.decompose(new_ubs)
         variable_bounds = {var: (in_lbs[var], in_ubs[var]) for var in variable_bounds}
-        sat_lbs, sat_ubs = sat_bounds(variable_bounds)
+        sat_lbs, sat_ubs, is_sat = sat_bounds(variable_bounds)
         prob_mass = probability_mass(variable_bounds)
 
         # 5. Update branches
@@ -342,6 +357,7 @@ def probability_bounds(
             in_ubs=new_ubs,
             out_lbs=sat_lbs.unsqueeze(1),
             out_ubs=sat_ubs.unsqueeze(1),
+            is_sat=is_sat.unsqueeze(1),
             probability_mass=prob_mass,
         )
 
