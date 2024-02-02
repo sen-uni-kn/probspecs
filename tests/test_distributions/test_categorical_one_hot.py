@@ -28,6 +28,20 @@ def test_init(probs):
 
 
 @pytest.mark.parametrize(
+    "probs",
+    (
+        [0.5, 0.5],
+        [0.2, 0.3, 0.4, 0.1],
+        [0.1] * 10,
+    ),
+)
+def test_init_from_numpy_array(probs):
+    probs = torch.as_tensor(np.array(probs))
+    distribution = CategoricalOneHot(probs)
+    print(distribution)
+
+
+@pytest.mark.parametrize(
     "probs,event,expected_probability",
     (
         ([0.5, 0.5], ([0.0, 0.0], [1.0, 1.0]), 1.0),

@@ -206,7 +206,7 @@ def probability_bounds(
     }
 
     @torch.no_grad()
-    def eval_bounds(
+    def propagate_bounds(
         term_: Function,
         var_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]],
         method: str = auto_lirpa_params.method,
@@ -225,7 +225,7 @@ def probability_bounds(
         method: str = auto_lirpa_params.method,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         intermediate_bounds = {
-            subs_names[term]: eval_bounds(term, var_bounds, method)
+            subs_names[term]: propagate_bounds(term, var_bounds, method)
             for term in requires_bounds
         }
         sat_lb_, sat_ub_ = subj_skeleton_sat_fn.propagate_bounds(**intermediate_bounds)
@@ -335,9 +335,6 @@ def probability_bounds(
         variable_bounds = {var: (in_lbs[var], in_ubs[var]) for var in variable_bounds}
         sat_lbs, sat_ubs = sat_bounds(variable_bounds)
         prob_mass = probability_mass(variable_bounds)
-
-        print(sat_lbs, sat_ubs)
-        print(len(branches))
 
         # 5. Update branches
         branches.append(
@@ -614,7 +611,7 @@ def propose_splits(
         dims_mask[:, dims] = True
         unset_values = (right_lbs != right_ubs) & dims_mask
         num_unset_values = unset_values.float().sum(dim=1)
-        num_unset_values.unqueeze_(1)
+        num_unset_values.unsqueeze_(1)
         right_lbs = torch.where(num_unset_values == 1 & unset_values, 1.0, right_lbs)
 
         # If this value is already assigned (either set or excluded from assignment)
@@ -656,7 +653,7 @@ def propose_splits(
                         splits[dim] = split
                         is_invalid[dim] = invalid
                     case TabularInputSpace.AttributeType.CATEGORICAL:
-                        dims = [offset + dim for dim in layout.values()]
+                        dims = [offset + dim for dim in layout[attr_name].values()]
                         for val_i, val in enumerate(
                             var_domain.attribute_values(attr_i)
                         ):

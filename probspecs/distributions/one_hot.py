@@ -42,7 +42,8 @@ class CategoricalOneHot(ProbabilityDistribution):
                 f"All entries of probabilities must lie in [0.0, 1.0]. "
                 f"Got: {probabilities}"
             )
-        if not torch.isclose(torch.sum(probabilities), torch.ones(())):
+        dtype = probabilities.dtype
+        if not torch.isclose(torch.sum(probabilities), torch.ones((), dtype=dtype)):
             raise ValueError(f"probabilities must sum to one. Got: {probabilities}")
 
         self.__probabilities = probabilities.flatten()
