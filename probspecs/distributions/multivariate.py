@@ -52,7 +52,7 @@ class MultivariateIndependent(ProbabilityDistribution):
         upper_right = upper_right.reshape(-1, *self.event_shape).flatten(1)
 
         i = 0
-        prob = torch.ones(lower_left.size(0))
+        prob = torch.ones(lower_left.size(0), device=lower_left.device)
         for distribution, num_elements in zip(
             self.__distributions, self.__num_elements
         ):

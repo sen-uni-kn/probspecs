@@ -9,7 +9,6 @@ import operator as ops
 from math import prod
 from typing import Callable, Union
 
-import numpy as np
 import torch
 from frozendict import frozendict
 
@@ -127,11 +126,16 @@ class Formula:
 
     def propagate_bounds(
         self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
-    ) -> np.ndarray[tuple, TL] | TL:
+    ) -> torch.Tensor | TL:
         """
         Propagates bounds on external variables and external functions through
         the formula, evaluating whether the formula certainly holds or
         is certainly violated given the bounds.
+
+        This method supports batch processing with batches of bounds.
+        In this case, it will return a tensor of :code:`TrinaryLogic`
+        values, wrapped as integers.
+        Have a look at :code:`TrinaryLogic` for more details.
 
         :param bounds: The bounds on the :class:`ExternalVariable`
          and :class:`ExternalFunction` objects in this formula.
@@ -327,11 +331,16 @@ class Inequality:
 
     def propagate_bounds(
         self, **bounds: tuple[torch.Tensor | float, torch.Tensor | float]
-    ) -> np.ndarray[tuple, TL] | TL:
+    ) -> torch.Tensor | TL:
         """
         Propagates bounds on external variables and external function through
         the inequality, evaluating whether the inequality certainly holds or
         is certainly violated given the bounds.
+
+        This method supports batch processing with batches of bounds.
+        In this case, it will return a tensor of :code:`TrinaryLogic`
+        values, wrapped as integers.
+        Have a look at :code:`TrinaryLogic` for more details.
 
         :param bounds: The bounds on the :class:`ExternalVariable`
          and :class:`ExternalFunction` objects in this formula.
@@ -354,14 +363,14 @@ class Inequality:
             compare = ops.le
             anti = ops.gt
 
-        lhs_lb = torch.as_tensor(lhs_lb).detach().cpu().numpy()
-        lhs_ub = torch.as_tensor(lhs_ub).detach().cpu().numpy()
-        rhs_lb = torch.as_tensor(rhs_lb).detach().cpu().numpy()
-        rhs_ub = torch.as_tensor(rhs_ub).detach().cpu().numpy()
-        return np.where(
+        lhs_lb = torch.as_tensor(lhs_lb)
+        lhs_ub = torch.as_tensor(lhs_ub)
+        rhs_lb = torch.as_tensor(rhs_lb)
+        rhs_ub = torch.as_tensor(rhs_ub)
+        return torch.where(
             compare(lhs_ub, rhs_lb),
             TL.TRUE,
-            np.where(anti(lhs_lb, rhs_ub), TL.FALSE, TL.UNKNOWN),
+            torch.where(anti(lhs_lb, rhs_ub), TL.FALSE, TL.UNKNOWN),
         )
 
     @property

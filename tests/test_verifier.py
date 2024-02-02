@@ -14,7 +14,19 @@ from probspecs.verifier import VerificationStatus
 import pytest
 
 
-def test_verifier_1(verification_test_nets_1d):
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.xfail(
+                condition=torch.cuda.is_available(), reason="CUDA unavailable"
+            ),
+        ),
+    ],
+)
+def test_verifier_1(verification_test_nets_1d, device):
     torch.manual_seed(909628848386095)
     # net1 is a binary classifier for x >= 0
     # net2 is a binary classifier for x >= 1
@@ -30,14 +42,30 @@ def test_verifier_1(verification_test_nets_1d):
 
     formula = prob1 >= prob2  # True
     verification_status, bounds = verify(
-        formula, {"net1": net1, "net2": net2}, {"x": input_space}, {"x": distribution}
+        formula,
+        {"net1": net1, "net2": net2},
+        {"x": input_space},
+        {"x": distribution},
+        worker_devices=(device,),
     )
     assert verification_status is VerificationStatus.SATISFIED
     assert bounds[prob1][0] >= bounds[prob2][1]  # lb >= ub
     print(bounds)
 
 
-def test_verifier_2(verification_test_nets_1d):
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.xfail(
+                condition=torch.cuda.is_available(), reason="CUDA unavailable"
+            ),
+        ),
+    ],
+)
+def test_verifier_2(verification_test_nets_1d, device):
     torch.manual_seed(6982588305995)
     net1, net2, input_space, distribution = verification_test_nets_1d
 
@@ -50,13 +78,29 @@ def test_verifier_2(verification_test_nets_1d):
 
     formula = prob2 / prob1 >= 0.35  # False
     verification_status, bounds = verify(
-        formula, {"net1": net1, "net2": net2}, {"x": input_space}, {"x": distribution}
+        formula,
+        {"net1": net1, "net2": net2},
+        {"x": input_space},
+        {"x": distribution},
+        worker_devices=(device,),
     )
     assert verification_status is VerificationStatus.VIOLATED
     print(bounds)
 
 
-def test_verifier_compose_1(verification_test_compose):
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.xfail(
+                condition=torch.cuda.is_available(), reason="CUDA unavailable"
+            ),
+        ),
+    ],
+)
+def test_verifier_compose_1(verification_test_compose, device):
     torch.manual_seed(503668842212395)
     input_space, distribution, generator, consumer = verification_test_compose
 
@@ -71,6 +115,7 @@ def test_verifier_compose_1(verification_test_compose):
         {"g": generator, "c": consumer},
         {"x": input_space},
         {"x": distribution},
+        worker_devices=(device,),
     )
     print(verification_status)
     print(bounds)

@@ -30,7 +30,7 @@ def seed_rngs():
 
 @pytest.fixture
 def resource_dir():
-    preferred_path = Path("test/resources")
+    preferred_path = Path("tests/resources")
     if preferred_path.exists():
         return preferred_path
     else:
