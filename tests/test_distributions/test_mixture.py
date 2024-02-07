@@ -21,7 +21,8 @@ def mixture_model_1():
     )
 
 
-def test_from_gaussian_mixture():
+@pytest.mark.parametrize("bounds", [None, (torch.tensor(-10), torch.tensor(20))])
+def test_from_gaussian_mixture(bounds):
     np.random.seed(94485665)
     data = np.random.lognormal(0, 1, size=(1000, 1))
     data += np.random.normal(10, 2, size=(1000, 1))
@@ -29,7 +30,7 @@ def test_from_gaussian_mixture():
     gmm = GaussianMixture(n_components=3)
     gmm.fit(data)
 
-    distribution = MixtureModel.from_gaussian_mixture(gmm)
+    distribution = MixtureModel.from_gaussian_mixture(gmm, bounds)
     print(distribution.weights, distribution.distributions)
 
 
@@ -56,3 +57,21 @@ def test_probability_1_batched(mixture_model_1):
     assert torch.allclose(
         mixture_model_1.probability((event_lb, event_ub)), expected_prob
     )
+
+
+@pytest.mark.parametrize(
+    "event,probability_bounds",
+    [
+        ((torch.tensor(-3.0), torch.tensor(3.0)), (0.999, 1.001)),
+        ((torch.tensor(-3.0), torch.tensor(0.0)), (0.4, 0.6)),
+        ((torch.tensor(0.0), torch.tensor(3.0)), (0.4, 0.6)),
+    ],
+)
+def test_truncated_gaussian_mixture(event, probability_bounds):
+    np.random.seed(74256315)
+    data = np.random.normal(-3, 1, size=(1000, 1))
+    data += np.random.normal(3, 1, size=(1000, 1))
+    gmm = GaussianMixture(n_components=4)
+    gmm.fit(data)
+
+    distribution = MixtureModel.from_gaussian_mixture(gmm, bounds=(-3.0, 3.0))

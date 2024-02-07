@@ -1,10 +1,10 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
-from functools import reduce
+from functools import reduce, partial
 from typing import Sequence
 
 import numpy as np
-from scipy.stats import norm
+from scipy.stats import norm, truncnorm
 import sklearn.mixture
 import torch
 
@@ -70,16 +70,25 @@ class MixtureModel(ProbabilityDistribution):
         self.__distributions = tuple(distributions)
 
     @staticmethod
-    def from_gaussian_mixture(mixture: sklearn.mixture.GaussianMixture):
+    def from_gaussian_mixture(
+        mixture: sklearn.mixture.GaussianMixture,
+        bounds: tuple[torch.Tensor | float, torch.Tensor | float] | None = None,
+    ) -> "MixtureModel":
         """
         Create a univariante (1d) :code:`MixtureModel` distribution from a
         univariate sklearn Gaussian mixture model.
+
+        Optionally, the Gaussian distributions in the mixture model can be
+        truncated (see `scipy.stats.truncnorm`) to a certain range.
+        This ensures that the total probability mass within the bounds is :math:`1.0`.
 
         :param mixture: The Gaussian mixture model.
          This needs to be a 1d model, which reflects in :code:`mixture.means_`
          and :code:`mixture.covariances_`.
          In particular, :code:`mixture.means_` needs to have a second dimension
          of size 1.
+        :param bounds: Optional bounds to truncate the Gaussian distributions
+         in the mixture model to. If :code:`None`, the distributions are not truncated.
         :return: A :code:`MixtureModel1d` behaving like :code:`mixture`.
         """
         n_components, n_features = mixture.means_.shape
@@ -96,8 +105,18 @@ class MixtureModel(ProbabilityDistribution):
                     "Unknown mixture covariance type. Supported: "
                     "'spherical', 'full', 'diag', and 'tied'."
                 )
+        make_scipy_distr = norm
+        if bounds is not None:
+            lb, ub = bounds
+
+            def make_truncnorm(loc, scale):
+                a = (lb - loc) / scale
+                b = (ub - loc) / scale
+                return truncnorm(a, b, loc, scale)
+
+            make_scipy_distr = make_truncnorm
         distributions = (
-            norm(loc=mixture.means_[i, 0], scale=covariances[i])
+            make_scipy_distr(loc=mixture.means_[i, 0], scale=covariances[i])
             for i in range(n_components)
         )
         distributions = tuple(
