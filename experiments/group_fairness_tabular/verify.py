@@ -91,8 +91,8 @@ if __name__ == "__main__":
         networks,
         {"x": input_space},
         {"x": input_distribution},
-        batch_size=256,
-        split_heuristic="normalized-longest-edge",
+        batch_size=128,
+        split_heuristic="IBP",
         worker_devices=("cpu", "cpu"),
     )
     end_time = time()
