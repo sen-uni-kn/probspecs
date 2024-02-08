@@ -251,7 +251,7 @@ def probability_bounds(
         (first two tensors) and a tensor of trinary truth values indicating
         whether :code:`subj_skeleton` is satisfied.
 
-        The additional trinary logic values are useful, as a satisfaction function
+        The additional trinary logic values are useful since a satisfaction function
         value of 0.0 is inconclusive.
         """
         intermediate_bounds = {

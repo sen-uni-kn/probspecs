@@ -3,6 +3,8 @@
 from argparse import ArgumentParser
 from math import floor
 from pathlib import Path
+import random
+from typing import Callable
 
 from adult import Adult
 import numpy as np
@@ -17,6 +19,7 @@ if __name__ == "__main__":
     torch.manual_seed(962912072501243)
     rng = torch.Generator().manual_seed(163050276766629)
     np.random.seed(2465716661)
+    random.seed(602560181477205)
 
     parser = ArgumentParser(
         "Train a neural network using Optuna hyperparameter search."
@@ -33,8 +36,8 @@ if __name__ == "__main__":
     tuning_group = parser.add_argument_group("Hyperparameter Tuning")
     tuning_group.add_argument(
         "--trials",
-        default=1000,
-        type=int,
+        default=None,
+        type=lambda x: None if x == "None" else int(x),
         help="How many trials of Optuna hyperparameter search to perform.",
     )
     tuning_group.add_argument(
@@ -49,7 +52,66 @@ if __name__ == "__main__":
         type=int,
         help="The number of parallel jobs to use for hyperparameter search.",
     )
-    tuning_save_reuse = parser.add_mutually_exclusive_group()
+    tuning_group.add_argument(
+        "--architecture",
+        type=int,
+        nargs="+",
+        default=None,
+        help="The network architecture to use. If None, the architecture is optimised "
+        "during hyperparameter search. "
+        "For example '--architecture 100 100 100' describes a neural network with three "
+        "hidden layers that each contain 100 neurons. "
+        "The network also contains an additional linear output layer of suitable size.",
+    )
+    tuning_group.add_argument(
+        "--num-epochs",
+        type=float,
+        default=None,
+        help="The number of epochs to perform during training. "
+        "If None, the number of epochs is optimised during hyperparameter search.",
+    )
+    tuning_group.add_argument(
+        "--lr",
+        type=float,
+        default=None,
+        help="The learning rate to use. If None, the learning rate is optimised "
+        "during hyperparameter search.",
+    )
+    tuning_group.add_argument(
+        "--beta1",
+        type=float,
+        default=None,
+        help="The first beta coefficient of the Adam algorithm. See "
+        "https://pytorch.org/docs/stable/generated/torch.optim.Adam.html#adam "
+        "for more information. "
+        "If None, this coefficient is optimised during hyperparameter search.",
+    )
+    tuning_group.add_argument(
+        "--beta2",
+        type=float,
+        default=None,
+        help="The second beta coefficient of the Adam algorithm. See "
+        "https://pytorch.org/docs/stable/generated/torch.optim.Adam.html#adam "
+        "for more information. "
+        "If None, this coefficient is optimised during hyperparameter search.",
+    )
+    tuning_group.add_argument(
+        "--lr-gamma",
+        type=float,
+        default=None,
+        help="The learning rate decay of the learning rate scheduler. "
+        "If None, the decay rate is optimised during hyperparameter search.",
+    )
+    tuning_group.add_argument(
+        "--lr-milestones",
+        type=int,
+        nargs="2",
+        default=None,
+        help="The learning rate schedule milestone. The learning rate is decayed "
+        "every time one of the iterations in this list is reached"
+        "If None, the milestones are optimised during hyperparameter search.",
+    )
+    tuning_save_reuse = tuning_group.add_mutually_exclusive_group()
     tuning_save_reuse.add_argument(
         "--save-hyperparameters",
         default=None,
@@ -78,18 +140,32 @@ if __name__ == "__main__":
     val_size = len(train_set) - train_size
     train_set, val_set = random_split(train_set, (train_size, val_size), generator=rng)
 
-    def new_network(trial: optuna.Trial) -> nn.Module:
-        num_layers = trial.suggest_int("num_layers", 1, 4)
+    def choose_param(name: str, choose: Callable):
+        """Evaluates and returns choose, if the argument `name` is None."""
+        arg_value = getattr(args, name)
+        return choose() if arg_value is None else arg_value
+
+    def build_network(layer_sizes: tuple[int, ...]) -> nn.Module:
         layers = []
         prev_layer_size = len(test_set.columns)  # input size
-        for i in range(num_layers):
-            layer_size = trial.suggest_int(f"layer_size_{i}", 20, 1000)
+        for layer_size in layer_sizes:
             lin_layer = nn.Linear(prev_layer_size, layer_size)
             layers.append(lin_layer)
             layers.append(nn.ReLU())
             prev_layer_size = layer_size
         layers.append(nn.Linear(prev_layer_size, num_classes))
         return nn.Sequential(*layers)
+
+    def new_network(trial: optuna.Trial) -> nn.Module:
+        if args.architecture is not None:
+            return build_network(args.architecture)
+        else:
+            num_layers = trial.suggest_int("num_layers", 1, 4)
+            layer_sizes = tuple(
+                trial.suggest_int(f"layer_size_{i}", 20, 1000)
+                for i in range(num_layers)
+            )
+            return build_network(layer_sizes)
 
     def run_training(
         trial: optuna.Trial, log=False, check_prune=True, save_network=False
@@ -108,19 +184,31 @@ if __name__ == "__main__":
 
         train_loader = DataLoader(train_set, batch_size=256, shuffle=True)
         epoch_len = len(train_loader)
-        num_epochs = trial.suggest_int("num_epochs", 5, 20)
+        num_epochs = choose_param(
+            "num_epochs", lambda: trial.suggest_int("num_epochs", 5, 20)
+        )
 
         network = new_network(trial)
-        lr = trial.suggest_float("lr", 1e-6, 1.0, log=True)
-        optimizer = torch.optim.Adam(network.parameters(), lr=lr)
-        lr_gamma = trial.suggest_float("lr_gamma", 0.1, 0.9)
-        lr_milestone_1 = trial.suggest_int("lr_milestone_1", 1, num_epochs * epoch_len)
-        lr_milestone_2 = trial.suggest_int("lr_milestone_2", 1, num_epochs * epoch_len)
+        lr = choose_param("lr", lambda: trial.suggest_float("lr", 1e-6, 1.0))
+        beta1 = choose_param("beta1", lambda: trial.suggest_float("beta1", 0.5, 1.0))
+        beta2 = choose_param("beta2", lambda: trial.suggest_float("beta2", 0.5, 1.0))
+        optimizer = torch.optim.Adam(network.parameters(), lr=lr, betas=(beta1, beta2))
+        lr_gamma = choose_param(
+            "lr_gamma", lambda: trial.suggest_float("lr_gamma", 0.1, 0.9)
+        )
+        if args.lr_milestones is None:
+            lr_milestone_1 = trial.suggest_int(
+                "lr_milestone_1", 1, num_epochs * epoch_len
+            )
+            lr_milestone_2 = trial.suggest_int(
+                "lr_milestone_2", 1, num_epochs * epoch_len
+            )
+            lr_milestones_ = (lr_milestone_1, lr_milestone_1 + lr_milestone_2)
+        else:
+            lr_milestones_ = args.lr_milestones
 
         lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer,
-            milestones=(lr_milestone_1, lr_milestone_1 + lr_milestone_2),
-            gamma=lr_gamma,
+            optimizer, milestones=lr_milestones_, gamma=lr_gamma
         )
         loss_function = nn.CrossEntropyLoss(weight=class_weights)
 
@@ -190,8 +278,27 @@ if __name__ == "__main__":
         )
         best_params = study.best_params
 
+        if args.architecture is not None:
+            best_params["num_layers"] = len(args.architecture)
+            for i, layer_size in enumerate(args.architecture):
+                best_params[f"layer_size_{i}"] = layer_size
+        if args.num_epochs is not None:
+            best_params["num_epochs"] = args.num_epochs
+        if args.lr is not None:
+            best_params["lr"] = args.lr
+        if args.beta1 is not None:
+            best_params["beta1"] = args.beta1
+        if args.beta2 is not None:
+            best_params["beta2"] = args.beta2
+        if args.lr_gamma is not None:
+            best_params["lr_gamma"] = args.lr_gamma
+        if args.lr_milestones is not None:
+            assert len(args.lr_milestones) == 2
+            best_params["lr_milestone_1"] = args.lr_milestones[0]
+            best_params["lr_milestone_2"] = args.lr_milestones[1]
+
         if args.save_hyperparameters is not None:
-            with open(args.save_to, "wt") as param_file:
+            with open(args.save_hyperparameters, "wt") as param_file:
                 print(f"Saving hyperparameters in {args.save_to}.")
                 safe_dump(best_params, param_file)
     else:
