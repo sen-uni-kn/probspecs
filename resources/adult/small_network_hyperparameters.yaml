@@ -1,0 +1,11 @@
+beta1: 0.7023840521906062
+beta2: 0.9385750061947385
+layer_size_0: 20
+layer_size_1: 10
+lr: 0.01459072035785846
+lr_gamma: 0.26924267645460914
+lr_milestone_1: 162
+lr_milestone_2: 380
+num_epochs: 14
+num_layers: 2
+random_seed: 431409684549184

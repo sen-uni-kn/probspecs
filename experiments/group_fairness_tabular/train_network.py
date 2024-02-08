@@ -299,7 +299,7 @@ if __name__ == "__main__":
 
         if args.save_hyperparameters is not None:
             with open(args.save_hyperparameters, "wt") as param_file:
-                print(f"Saving hyperparameters in {args.save_to}.")
+                print(f"Saving hyperparameters in {args.save_hyperparameters}.")
                 safe_dump(best_params, param_file)
     else:
         with open(args.hyperparam_file, "rt") as param_file:
