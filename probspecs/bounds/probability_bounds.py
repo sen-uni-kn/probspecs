@@ -909,6 +909,7 @@ def split_random(
 
     :param branches: The branches for which to determine the dimensions to split.
     :param combined_input_space: The combined input space of all variables.
+    :param rng: A random number generator for generating the splits.
     :return: The splits to perform.
     """
     splits, is_invalid = propose_splits(branches, combined_input_space)
