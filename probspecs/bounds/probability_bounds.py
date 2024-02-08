@@ -5,7 +5,6 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from math import prod
 from typing import Generator, Literal, Sequence, Callable, Final
-from logging import info, warning, debug
 
 import torch
 from frozendict import frozendict
@@ -321,7 +320,7 @@ def probability_bounds(
         prob_ub -= torch.sum(certainly_viol_mask * branches.probability_mass)
         branches.drop(certainly_viol_mask)
 
-        info(f"Probability Bounds ({subj}): lb={prob_lb}, ub={prob_ub}")
+        print(f"Probability Bounds ({subj}): lb={prob_lb}, ub={prob_ub}")
         yield (prob_lb, prob_ub)
 
         # this is primarily for the case when apply_symbolic_bounds
