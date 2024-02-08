@@ -9,7 +9,7 @@ import sklearn.mixture
 import torch
 
 from .probability_distribution import ProbabilityDistribution
-from .single_dimension import UnivariateContinuousDistribution
+from .univariate import UnivariateContinuousDistribution
 
 
 class MixtureModel(ProbabilityDistribution):

@@ -1,5 +1,5 @@
 from .probability_distribution import ProbabilityDistribution
-from .single_dimension import (
+from .univariate import (
     UnivariateContinuousDistribution,
     UnivariateDiscreteDistribution,
 )
