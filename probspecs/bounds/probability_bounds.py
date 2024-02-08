@@ -1,9 +1,11 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
+import typing
 from collections import OrderedDict
 from dataclasses import dataclass
 from math import prod
-from typing import Generator, Literal, Sequence, Callable
+from typing import Generator, Literal, Sequence, Callable, Final
+from logging import info, warning, debug
 
 import torch
 from frozendict import frozendict
@@ -37,6 +39,29 @@ from ..utils.formula_utils import (
     make_explicit,
 )
 
+__all__ = [
+    "SPLIT_HEURISTICS",
+    "SPLIT_HEURISTICS_TYPE",
+    "probability_bounds",
+    "split_longest_edge",
+    "split_random",
+    "split_prob_balanced",
+    "smart_branching",
+]
+
+
+SPLIT_HEURISTICS_TYPE: Final = Literal[
+    "IBP",
+    "CROWN",
+    "longest-edge",
+    "normalized-longest-edge",
+    "random",
+    "prob-balanced",
+]
+SPLIT_HEURISTICS: Final[tuple[SPLIT_HEURISTICS_TYPE, ...]] = typing.get_args(
+    SPLIT_HEURISTICS_TYPE
+)
+
 
 def probability_bounds(
     probability: Probability,
@@ -45,9 +70,7 @@ def probability_bounds(
     variable_distributions: dict[str, ProbabilityDistribution],
     batch_size: int = 128,
     auto_lirpa_params: AutoLiRPAParams = AutoLiRPAParams(),
-    split_heuristic: Literal[
-        "IBP", "CROWN", "longest-edge", "random", "prob-balanced"
-    ] = "longest-edge",
+    split_heuristic: SPLIT_HEURISTICS_TYPE = "normalized-longest-edge",
     split_heuristic_params: dict[Literal["better_branch"], bool] = frozendict(),
     device: str | torch.device | None = None,
 ) -> Generator[tuple[float, float], None, None]:
@@ -78,6 +101,11 @@ def probability_bounds(
         This split heuristic also has a :code:`better_branch? parameter.
         See :code:`IBP` for more details on this parameter.
      - :code:`"longest-edge"`: Split the dimension that has the largest diameter.
+     - :code:`"normalized-longest-edge"`: Split the dimension that has the largest
+        diameter, where the diameter of each dimension is normalized by the initial
+        diameter of the dimension.
+        This variant of longest edge splitting is recommended for input spaces whose
+        dimensions have different scales.
      - :code:`"prob-balanced"`: Tries to balance the probability mass between branches.
      - :code:`"random"`: Randomly selects a dimension to split.
 
@@ -102,16 +130,10 @@ def probability_bounds(
      If None, the tensors remain on the device they already reside on.
     :return: A generator that yields improving lower and upper bounds.
     """
-    if split_heuristic not in (
-        "IBP",
-        "CROWN",
-        "longest-edge",
-        "random",
-        "prob-balanced",
-    ):
+    if split_heuristic not in SPLIT_HEURISTICS:
         raise ValueError(
             f"Unknown split heuristic: {split_heuristic}."
-            f"Use either 'IBP', 'CROWN', 'longest-edge', 'random', or 'prob-balanced'."
+            f"Use one from {', '.join(SPLIT_HEURISTICS)}."
         )
 
     if probability.condition is not None:
@@ -282,6 +304,7 @@ def probability_bounds(
     # prob_ub = 1 - probability mass in all regions where sat_ub < 0, which is a
     # sufficient condition for violation.
     prob_ub = torch.sum(branches.probability_mass)  # total probability may be < 1.0
+
     # Some split heuristics resolve ties using randomness to avoid that the
     # first dimensions are split more frequently than later dimensions.
     split_heuristic_rng = torch.Generator(device=device)
@@ -298,6 +321,7 @@ def probability_bounds(
         prob_ub -= torch.sum(certainly_viol_mask * branches.probability_mass)
         branches.drop(certainly_viol_mask)
 
+        info(f"Probability Bounds ({subj}): lb={prob_lb}, ub={prob_ub}")
         yield (prob_lb, prob_ub)
 
         # this is primarily for the case when apply_symbolic_bounds
@@ -316,22 +340,26 @@ def probability_bounds(
         selected_branches = branches.pop(batch_size)
 
         # 2. Select dimensions to split
-        if split_heuristic.upper() in ("IBP", "CROWN"):
+        if split_heuristic.casefold() in ("ibp", "crown"):
             splits = smart_branching(
                 selected_branches,
                 full_input_space,
                 lambda *args: sat_bounds(*args)[:2],
-                method=split_heuristic.upper(),
+                method=split_heuristic.casefold().upper(),
                 rng=split_heuristic_rng,
                 **split_heuristic_params,
             )
-        elif split_heuristic.lower() == "longest-edge":
-            splits = split_longest_edge(selected_branches, full_input_space)
-        elif split_heuristic.lower() == "prob-balanced":
+        elif split_heuristic.casefold().endswith("longest-edge"):
+            splits = split_longest_edge(
+                selected_branches,
+                full_input_space,
+                normalize=split_heuristic.casefold().startswith("normalized"),
+            )
+        elif split_heuristic.casefold() == "prob-balanced":
             splits = split_prob_balanced(
                 selected_branches, full_input_space, probability_mass
             )
-        elif split_heuristic.lower() == "random":
+        elif split_heuristic.casefold() == "random":
             splits = split_random(
                 selected_branches, full_input_space, split_heuristic_rng
             )
@@ -807,21 +835,31 @@ def smart_branching(
 
 
 def split_longest_edge(
-    branches: BranchStore, combined_input_space: CombinedInputSpace
+    branches: BranchStore,
+    combined_input_space: CombinedInputSpace,
+    normalize: bool = False,
 ) -> Split:
     """
     Select input dimensions to split.
     :code:`split_longest_edge` selects the dimension (for each batch element)
     that has the largest distance between lower and upper bound (the longest edge).
 
+    Optionally allows to normalize the edge lengths to the initial edge lengths
+    as specified in :code:`combined_input_space`.
+
     :param branches: The branches for which to determine the dimensions to split.
     :param combined_input_space: The combined input space of all variables.
+    :param normalize: Whether to apply edge length normalization.
     :return: The splits to perform.
     """
     # 1st dim of tensors in splits corresponds to the dimension that is split
     splits, is_invalid = propose_splits(branches, combined_input_space)
 
     edge_len = branches.in_ubs - branches.in_lbs
+    if normalize:
+        initial_lb, initial_ub = combined_input_space.input_bounds
+        initial_lb, initial_ub = initial_lb.to(edge_len), initial_ub.to(edge_len)
+        edge_len = edge_len / (initial_ub - initial_lb)
     edge_len.masked_fill_(is_invalid.T, -torch.inf)
     split_dims = torch.argmax(edge_len, dim=1)
     return splits.select(split_dims)

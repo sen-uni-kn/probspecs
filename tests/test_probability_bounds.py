@@ -4,14 +4,12 @@ import torch
 
 from probspecs import ExternalVariable, ExternalFunction, Probability, compose
 from probspecs.bounds.auto_lirpa_params import AutoLiRPAParams
-from probspecs.bounds.probability_bounds import probability_bounds
+from probspecs.bounds.probability_bounds import probability_bounds, SPLIT_HEURISTICS
 
 import pytest
 
 
-@pytest.mark.parametrize(
-    "split_heuristic", ["longest-edge", "IBP", "CROWN", "random", "prob-balanced"]
-)
+@pytest.mark.parametrize("split_heuristic", SPLIT_HEURISTICS)
 def test_probability_bounds_1(split_heuristic, verification_test_nets_1d):
     """
     Test computing bounds on previously known probabilities
@@ -126,9 +124,7 @@ def test_probability_bounds_conditional_3(split_heuristic, verification_test_net
         assert ub >= 1.0
 
 
-@pytest.mark.parametrize(
-    "split_heuristic", ["longest-edge", "IBP", "CROWN", "random", "prob-balanced"]
-)
+@pytest.mark.parametrize("split_heuristic", SPLIT_HEURISTICS)
 def test_probability_bounds_compose_1(
     split_heuristic,
     verification_test_compose,
@@ -190,7 +186,7 @@ def test_probability_bounds_mnist_gen_1(
         prev_lb, prev_ub = lb, ub
 
 
-@pytest.mark.parametrize("split_heuristic", ["longest-edge", "IBP", "CROWN", "random"])
+@pytest.mark.parametrize("split_heuristic", SPLIT_HEURISTICS)
 @pytest.mark.parametrize("input_size", [3.0, 0.1], ids=("large", "small"))
 def test_probability_bounds_mnist_1(
     split_heuristic,

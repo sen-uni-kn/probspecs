@@ -22,7 +22,7 @@ from .formula import (
     ExternalVariable,
 )
 from .trinary_logic import TrinaryLogic as TL
-from .bounds.probability_bounds import probability_bounds
+from .bounds.probability_bounds import probability_bounds, SPLIT_HEURISTICS_TYPE
 from .bounds.network_bounds import network_bounds
 from .utils.formula_utils import (
     collect_requires_bounds,
@@ -63,9 +63,7 @@ def verify(
     timeout: float | None = None,
     batch_size: int = 128,
     auto_lirpa_params: AutoLiRPAParams = AutoLiRPAParams(method="CROWN"),
-    split_heuristic: Literal[
-        "IBP", "CROWN", "longest-edge", "random", "prob-balanced"
-    ] = "longest-edge",
+    split_heuristic: SPLIT_HEURISTICS_TYPE = "normalized-longest-edge",
 ) -> tuple[VerificationStatus, dict[Function, tuple[torch.Tensor, torch.Tensor]]]:
     """
     Verifies a formula.

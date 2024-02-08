@@ -91,9 +91,9 @@ if __name__ == "__main__":
         networks,
         {"x": input_space},
         {"x": input_distribution},
-        batch_size=1024,
-        split_heuristic="IBP",
-        worker_devices=("cpu",),
+        batch_size=256,
+        split_heuristic="normalized-longest-edge",
+        worker_devices=("cpu", "cpu"),
     )
     end_time = time()
     print(verification_status)
