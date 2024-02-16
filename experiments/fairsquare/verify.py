@@ -52,6 +52,7 @@ if __name__ == "__main__":
         models_composed = compose(classifier_func, z=pop_model_func)
         networks["pop_model"] = pop_model.population_model
     else:
+        pop_model_func = x
         models_composed = compose(classifier_func, z=x)
 
     input_lbs, input_ubs = pop_model.input_space.input_bounds
@@ -61,12 +62,12 @@ if __name__ == "__main__":
             valid_input & (x[:, i] >= input_lbs[i]) & (x[:, i] <= input_ubs[i])
         )
 
-    female = x[:, 2] <= 0
-    male = x[:, 2] >= 1
+    female = x[:, 2] <= 0.0
+    male = x[:, 2] >= 1.0
     high_income = models_composed[:, 0] < models_composed[:, 1]
     base_cond = valid_input
     if args.qual:
-        qualified = x[:, 0] >= 18
+        qualified = pop_model_func[:, 0] >= 18.0
         base_cond = base_cond & qualified
     p_disadvantaged = prob(high_income, condition=female & base_cond)
     p_advantaged = prob(high_income, condition=male & base_cond)
