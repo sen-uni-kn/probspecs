@@ -348,7 +348,7 @@ class CombinedInputSpace(InputSpace):
     and stacking them in a large vector.
     """
 
-    def __init__(self, variable_domains: OrderedDict[str, InputSpace]):
+    def __init__(self, variable_domains: dict[str, InputSpace]):
         """
         Creates a new combined input space from a set of variables.
 

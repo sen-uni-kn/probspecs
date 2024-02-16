@@ -1,10 +1,10 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
-from functools import reduce, partial
+from random import Random
 from typing import Sequence
 
 import numpy as np
-from scipy.stats import norm, truncnorm
+from scipy.stats import norm, truncnorm, multinomial
 import sklearn.mixture
 import torch
 
@@ -68,6 +68,9 @@ class MixtureModel(ProbabilityDistribution):
 
         self.__weights = weights
         self.__distributions = tuple(distributions)
+        self.__select_component = multinomial(
+            n=1, p=weights
+        )  # produces one-hot vectors
 
     @staticmethod
     def from_gaussian_mixture(
@@ -138,6 +141,23 @@ class MixtureModel(ProbabilityDistribution):
         )
         weighted = (w * p for w, p in zip(self.weights, component_probs))
         return sum(weighted)
+
+    def sample(self, num_samples: int, seed=None) -> torch.Tensor:
+        rng = Random()
+        rng.seed(seed)
+        # first generate random samples from all components,
+        # then select using a sample from self.__select_component
+        samples = []
+        for component in self.__distributions:
+            seed = rng.randint(0, 2**32 - 1)
+            sample = component.sample(num_samples, seed)
+            samples.append(sample.reshape(num_samples, -1))
+        samples = torch.hstack(samples)
+        seed = rng.randint(0, 2**32 - 1)
+        select = self.__select_component.rvs(num_samples, random_state=seed)
+        # this is a one-hot vector, so selecting corresponds to multiplying
+        select = torch.as_tensor(select, dtype=torch.get_default_dtype())
+        return torch.sum(samples * select, dim=-1)
 
     @property
     def event_shape(self) -> torch.Size:

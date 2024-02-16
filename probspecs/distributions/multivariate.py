@@ -1,4 +1,5 @@
 from math import prod
+from random import Random
 
 import torch
 
@@ -64,6 +65,16 @@ class MultivariateIndependent(ProbabilityDistribution):
             ub = ub.reshape(-1, *distribution.event_shape)
             prob = prob * distribution.probability((lb, ub))
         return prob
+
+    def sample(self, num_samples: int, seed=None) -> torch.Tensor:
+        samples = []
+        rng = Random()
+        rng.seed(seed)
+        for distribution in self.__distributions:
+            seed = rng.randint(0, 2**32 - 1)
+            sample = distribution.sample(num_samples, seed)
+            samples.append(sample.reshape(num_samples, -1))
+        return torch.hstack(samples)
 
     @property
     def event_shape(self) -> torch.Size:

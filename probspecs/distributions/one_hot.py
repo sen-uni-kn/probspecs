@@ -4,6 +4,7 @@ from scipy.stats import multinomial
 import torch
 
 from .probability_distribution import ProbabilityDistribution
+from ..utils.tensor_utils import TENSOR_LIKE, to_tensor
 
 
 class CategoricalOneHot(ProbabilityDistribution):
@@ -28,7 +29,7 @@ class CategoricalOneHot(ProbabilityDistribution):
     (a categorical distribution is a Multinomial distribution with n=1).
     """
 
-    def __init__(self, probabilities: torch.Tensor):
+    def __init__(self, probabilities: TENSOR_LIKE):
         """
         Create a new :code:`CategoricalOneHot` distribution.
 
@@ -37,6 +38,8 @@ class CategoricalOneHot(ProbabilityDistribution):
          The entries of :code:`probability` must lie in [0.0, 1.0]
          and must sum to one.
         """
+        probabilities = to_tensor(probabilities)
+
         if not torch.all((0.0 <= probabilities) & (probabilities <= 1.0)):
             raise ValueError(
                 f"All entries of probabilities must lie in [0.0, 1.0]. "
@@ -75,12 +78,15 @@ class CategoricalOneHot(ProbabilityDistribution):
     def event_shape(self) -> torch.Size:
         return self.__probabilities.shape
 
-    # MARK: scipy-like methods
-
-    def rvs(self, size: int = 1) -> torch.Tensor:
-        values = self.__multinomial.rvs(size=size)
+    def sample(self, num_samples: int, seed=None) -> torch.Tensor:
+        values = self.__multinomial.rvs(size=num_samples, random_state=seed)
         # values are ints, we want floats.
         return torch.as_tensor(values, dtype=torch.get_default_dtype())
+
+    # MARK: scipy-like methods
+
+    def rvs(self, size: int = 1, random_state: int | None = None) -> torch.Tensor:
+        return self.sample(size, random_state)
 
     def pmf(self, x: torch.Tensor) -> torch.Tensor:
         return torch.as_tensor(self.__multinomial.pmf(x))

@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 from sklearn.mixture import GaussianMixture
-from scipy.stats import norm
+from scipy.stats import norm, truncnorm
 
 from probspecs.distributions import MixtureModel, UnivariateContinuousDistribution
 
@@ -57,6 +57,22 @@ def test_probability_1_batched(mixture_model_1):
     assert torch.allclose(
         mixture_model_1.probability((event_lb, event_ub)), expected_prob
     )
+
+
+@pytest.mark.parametrize("batch_size", [1, 100])
+def test_sample(batch_size):
+    mixture_model = MixtureModel(
+        weights=[0.85, 0.15],
+        distributions=(
+            UnivariateContinuousDistribution(
+                truncnorm(a=-15, b=-5, loc=-10, scale=0.5)
+            ),
+            UnivariateContinuousDistribution(truncnorm(a=5, b=15, loc=10, scale=0.5)),
+        ),
+    )
+
+    x = mixture_model.sample(num_samples=batch_size, seed=675384213988767)
+    assert torch.all(((-15.0 <= x) & (x <= -5.0)) | ((5.0 <= x) & (x <= 15.0)))
 
 
 @pytest.mark.parametrize(

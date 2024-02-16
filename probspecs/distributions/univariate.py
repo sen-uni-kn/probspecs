@@ -5,9 +5,15 @@ from .probability_distribution import UnivarianteDistribution
 
 class UnivariateContinuousDistribution(UnivarianteDistribution):
     """
-    Wraps a continuous univariante (one-dimensional) probability distribution that
-    allows evaluating the cumulative distribution function (cdf)
-    as a :class:`ProbabilityDistribution`.
+    Wraps a continuous univariate (one-dimensional) probability distribution that
+    allows evaluating the cumulative distribution function (cdf) and
+    obtaining random samples (rvs) as a :class:`ProbabilityDistribution`.
+
+    The method evaluating the cdf of the wrapped distribution
+    needs to be named :code:`cdf`.
+    The method producing random samples needs to be named :code:`rvs`
+    and accept a :code:`size` and a :code:`random_state` argument,
+    both of type :code:`int`.
 
     The probability of interval :math:`[a, b]` is computed
     as :math:`cdf(b) - cdf(a)`.
@@ -54,11 +60,26 @@ class UnivariateContinuousDistribution(UnivarianteDistribution):
         prob = torch.as_tensor(prob, device=orig_device)
         return prob
 
+    def sample(self, num_samples: int, seed=None) -> torch.Tensor:
+        # this class is intended for use with scipy, which relies on numpy.random
+        # which doesn't like seeds >= 2**32.
+        if seed is not None:
+            seed = seed % 2**32
+        samples = self.__distribution.rvs(size=num_samples, random_state=seed)
+        return torch.as_tensor(samples, dtype=torch.get_default_dtype())
+
 
 class UnivariateDiscreteDistribution(UnivarianteDistribution):
     """
     Wraps a discrete univariate (1d) probability distribution that provides a
-    probability mass function (pmf) as a :class:`ProbabilityDistribution`.
+    probability mass function (pmf) and obtaining random samples (rvs)
+    as a :class:`ProbabilityDistribution`.
+
+    The method evaluating the pmf of the wrapped distribution
+    needs to be named :code:`pmf`.
+    The method producing random samples needs to be named :code:`rvs`
+    and accept a :code:`size` and a :code:`random_state` argument,
+    both of type :code:`int`.
 
     The probability of an interval :math:`[a, b]` is computed as the sum of
     the pmf of all integer values within :math:`[a, b]`.
@@ -88,3 +109,11 @@ class UnivariateDiscreteDistribution(UnivarianteDistribution):
         integers = integers.reshape(1, -1).to(a.device)
         selected_probs = torch.where((a <= integers) & (integers <= b), probs, 0.0)
         return selected_probs.sum(dim=1)
+
+    def sample(self, num_samples: int, seed=None) -> torch.Tensor:
+        # this class is intended for use with scipy, which relies on numpy.random
+        # which doesn't like seeds >= 2**32.
+        if seed is not None:
+            seed = seed % 2**32
+        samples = self.__distribution.rvs(size=num_samples, random_state=seed)
+        return torch.as_tensor(samples, dtype=torch.get_default_dtype())

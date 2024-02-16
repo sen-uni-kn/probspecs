@@ -33,6 +33,18 @@ class ProbabilityDistribution(Protocol):
         """
         raise NotImplementedError()
 
+    @abstractmethod
+    def sample(self, num_samples: int, seed=None) -> torch.Tensor:
+        """
+        Produce random samples from this probability distribution.
+
+        :param num_samples: The number of samples to produce.
+        :param seed: A seed to initializing random number generators.
+        :return: A tensor with batch size (first dimension) :code:`num_samples`.
+         The remaining dimensions of the tensor correspond to the :code:`event_shape`.
+        """
+        raise NotImplementedError()
+
     @property
     @abstractmethod
     def event_shape(self) -> torch.Size:
