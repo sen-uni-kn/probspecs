@@ -52,7 +52,7 @@ if __name__ == "__main__":
         models_composed = compose(classifier_func, z=pop_model_func)
         networks["pop_model"] = pop_model.population_model
     else:
-        models_composed = classifier_func
+        models_composed = compose(classifier_func, z=x)
 
     input_lbs, input_ubs = pop_model.input_space.input_bounds
     valid_input = (x[:, 0] >= input_lbs[0]) & (x[:, 0] <= input_ubs[0])
