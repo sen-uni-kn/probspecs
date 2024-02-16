@@ -1,3 +1,5 @@
+#  Copyright (c) 2024. David Boetius
+#  Licensed under the MIT License
 from math import prod
 from random import Random
 

@@ -5,6 +5,7 @@ from .distributions.mixture import MixtureModel
 from .distributions.multivariate import MultivariateIndependent
 from .distributions.one_hot import CategoricalOneHot
 from .distributions.probability_distribution import ProbabilityDistribution
+from .distributions.uniform import Uniform
 from .distributions.univariate import (
     UnivariateContinuousDistribution,
     UnivariateDiscreteDistribution,
