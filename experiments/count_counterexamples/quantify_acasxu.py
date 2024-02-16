@@ -21,7 +21,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "-n",
         "--network",
-        choices=("1/9", "5/3") + tuple(f"2/{i}" for i in range(10)),
+        choices=("1_9", "5_3")
+        + tuple(f"2_{i}" for i in range(10))
+        + (
+            "net_1_9_property_7_partially_repaired_1",
+            "net_1_9_property_7_partially_repaired_2",
+            "net_1_9_property_7_partially_repaired_3",
+            "net_2_9_property_8_unknown",
+        ),
         required=True,
         help="The ACAS Xu network number of the network to investigate. "
         "The network is loaded from resouces/acasxu.",
@@ -43,9 +50,14 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    net_i1, net_i2 = args.network.split("/")
+    net_split = args.network.split("_")
+    if len(net_split) == 2:
+        net_i1, net_i2 = net_split
+        net_name = f"ACASXU_run2a_{net_i1}_{net_i2}_batch_2000"
+    else:
+        net_name = args.network
     network, (input_lbs, input_ubs) = load_nnet(
-        Path("resources", "acasxu", f"ACASXU_run2a_{net_i1}_{net_i2}_batch_2000.nnet")
+        Path("resources", "acasxu", net_name + ".nnet")
     )
     input_space = TensorInputSpace(input_lbs, input_ubs)
 
