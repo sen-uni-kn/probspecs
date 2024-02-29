@@ -91,7 +91,7 @@ if __name__ == "__main__":
         networks,
         {"x": input_space},
         {"x": input_distribution},
-        batch_size=128,
+        batch_size=512,
         split_heuristic="IBP",
         worker_devices=("cpu", "cpu"),
     )
