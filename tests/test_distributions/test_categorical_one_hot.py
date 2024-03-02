@@ -1,44 +1,12 @@
 #  Copyright (c) 2024. David Boetius
 #  Licensed under the MIT License
-import numpy as np
 import torch
-from sklearn.mixture import GaussianMixture
-from scipy.stats import norm
+import pytest
 
 from probspecs.distributions import CategoricalOneHot
 
-import pytest
 
-
-@pytest.mark.parametrize(
-    "probs",
-    (
-        [0.5, 0.5],
-        [0.2, 0.3, 0.4, 0.1],
-        [0.1] * 10,
-        [0.05, 0.15] * 5,
-        [0.0, 1.0, 0.0, 0.0, 0.0],
-        [1 / 3, 0.0, 2 / 3],
-    ),
-)
-def test_init(probs):
-    probs = torch.tensor(probs)
-    distribution = CategoricalOneHot(probs)
-    print(distribution)
-
-
-@pytest.mark.parametrize(
-    "probs",
-    (
-        [0.5, 0.5],
-        [0.2, 0.3, 0.4, 0.1],
-        [0.1] * 10,
-    ),
-)
-def test_init_from_numpy_array(probs):
-    probs = torch.as_tensor(np.array(probs))
-    distribution = CategoricalOneHot(probs)
-    print(distribution)
+# Init tests are in test_categorical
 
 
 @pytest.mark.parametrize(
@@ -53,54 +21,7 @@ def test_init_from_numpy_array(probs):
         ([0.5, 0.5], ([1.0, 1.0], [1.0, 1.0]), 0.0),
         ([0.5, 0.5], ([0.1, 0.0], [1.0, 1.0]), 0.5),
         ([0.5, 0.5], ([0.0, 0.5], [0.5, 1.0]), 0.5),
-        ([0.2, 0.3, 0.4, 0.1], ([0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]), 1.0),
-        ([0.2, 0.3, 0.4, 0.1], ([1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]), 0.2),
-        ([0.2, 0.3, 0.4, 0.1], ([0.0, 1.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]), 0.3),
-        ([0.2, 0.3, 0.4, 0.1], ([0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 1.0, 0.0]), 0.4),
-        ([0.2, 0.3, 0.4, 0.1], ([0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0]), 0.1),
-        ([0.2, 0.3, 0.4, 0.1], ([0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]), 0.5),
-        ([0.2, 0.3, 0.4, 0.1], ([0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 0.0]), 0.9),
-        ([0.2, 0.3, 0.4, 0.1], ([0.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 1.0]), 0.4),
-        ([0.2, 0.3, 0.4, 0.1], ([1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 0.0, 1.0]), 0.0),
-        (
-            [0.0, 1.0, 0.0, 0.0, 0.0],
-            ([0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0, 1.0]),
-            1.0,
-        ),
-        (
-            [0.0, 1.0, 0.0, 0.0, 0.0],
-            ([0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 1.0, 1.0, 1.0]),
-            0.0,
-        ),
-        (
-            [0.0, 1.0, 0.0, 0.0, 0.0],
-            ([0.0, 0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0, 0.0]),
-            0.0,
-        ),
-        (
-            [0.0, 1.0, 0.0, 0.0, 0.0],
-            ([0.0, 0.5, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 1.0, 0.0]),
-            1.0,
-        ),
-        ([1 / 3, 0.0, 2 / 3], ([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]), 1.0),
-        ([1 / 3, 0.0, 2 / 3], ([-1.0, -1.0, -1.0], [2.0, 2.0, 2.0]), 1.0),
-        ([1 / 3, 0.0, 2 / 3], ([-1.0, -1.0, -1.0], [0.0, 2.0, 0.0]), 0.0),
-        ([1 / 3, 0.0, 2 / 3], ([-1.0, -1.0, -1.0], [0.0, 0.0, 10.0]), 2 / 3),
-        ([1 / 3, 0.0, 2 / 3], ([-100.0, 0.0, -0.5], [14.7, 0.1, 0.5]), 1 / 3),
-    ),
-)
-def test_probability(probs, event, expected_probability):
-    distribution = CategoricalOneHot(torch.tensor(probs))
-    event = tuple(map(torch.tensor, event))
-    assert torch.isclose(
-        distribution.probability(event), torch.tensor(expected_probability)
-    )
-
-
-@pytest.mark.parametrize(
-    "probs,event,expected_probability",
-    (
-        (
+        (  # batched version of the above
             [0.5, 0.5],
             (
                 [
@@ -128,6 +49,15 @@ def test_probability(probs, event, expected_probability):
             ),
             [1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.5, 0.5],
         ),
+        ([0.2, 0.3, 0.4, 0.1], ([0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]), 1.0),
+        ([0.2, 0.3, 0.4, 0.1], ([1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]), 0.2),
+        ([0.2, 0.3, 0.4, 0.1], ([0.0, 1.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]), 0.3),
+        ([0.2, 0.3, 0.4, 0.1], ([0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 1.0, 0.0]), 0.4),
+        ([0.2, 0.3, 0.4, 0.1], ([0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0]), 0.1),
+        ([0.2, 0.3, 0.4, 0.1], ([0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]), 0.5),
+        ([0.2, 0.3, 0.4, 0.1], ([0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 0.0]), 0.9),
+        ([0.2, 0.3, 0.4, 0.1], ([0.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 1.0]), 0.4),
+        ([0.2, 0.3, 0.4, 0.1], ([1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 0.0, 1.0]), 0.0),
         (
             [0.2, 0.3, 0.4, 0.1],
             (
@@ -158,6 +88,26 @@ def test_probability(probs, event, expected_probability):
         ),
         (
             [0.0, 1.0, 0.0, 0.0, 0.0],
+            ([0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0, 1.0]),
+            1.0,
+        ),
+        (
+            [0.0, 1.0, 0.0, 0.0, 0.0],
+            ([0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 1.0, 1.0, 1.0]),
+            0.0,
+        ),
+        (
+            [0.0, 1.0, 0.0, 0.0, 0.0],
+            ([0.0, 0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0, 0.0]),
+            0.0,
+        ),
+        (
+            [0.0, 1.0, 0.0, 0.0, 0.0],
+            ([0.0, 0.5, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 1.0, 0.0]),
+            1.0,
+        ),
+        (
+            [0.0, 1.0, 0.0, 0.0, 0.0],
             (
                 [
                     [0.0, 0.0, 0.0, 0.0, 0.0],
@@ -174,6 +124,11 @@ def test_probability(probs, event, expected_probability):
             ),
             [1.0, 0.0, 0.0, 1.0],
         ),
+        ([1 / 3, 0.0, 2 / 3], ([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]), 1.0),
+        ([1 / 3, 0.0, 2 / 3], ([-1.0, -1.0, -1.0], [2.0, 2.0, 2.0]), 1.0),
+        ([1 / 3, 0.0, 2 / 3], ([-1.0, -1.0, -1.0], [0.0, 2.0, 0.0]), 0.0),
+        ([1 / 3, 0.0, 2 / 3], ([-1.0, -1.0, -1.0], [0.0, 0.0, 10.0]), 2 / 3),
+        ([1 / 3, 0.0, 2 / 3], ([-100.0, 0.0, -0.5], [14.7, 0.1, 0.5]), 1 / 3),
         (
             [1 / 3, 0.0, 2 / 3],
             (
@@ -196,9 +151,13 @@ def test_probability(probs, event, expected_probability):
         ),
     ),
 )
-def test_probability_batched(probs, event, expected_probability):
+def test_probability(probs, event, expected_probability):
     distribution = CategoricalOneHot(torch.tensor(probs))
-    event = tuple(map(torch.tensor, event))
-    assert torch.allclose(
-        distribution.probability(event), torch.tensor(expected_probability)
-    )
+    dtype = distribution.dtype
+    event = torch.tensor(event[0], dtype=dtype), torch.tensor(event[1], dtype=dtype)
+    expected_probability = torch.tensor(expected_probability, dtype=dtype)
+    assert torch.allclose(distribution.probability(event), expected_probability)
+
+
+if __name__ == "__main__":
+    pytest.main()

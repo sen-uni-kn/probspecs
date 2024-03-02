@@ -1,7 +1,6 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
 from typing import Callable
-from frozendict import frozendict
 
 import torch
 
@@ -19,6 +18,8 @@ from ..formula import (
     ExplicitFunction,
     TERM_TYPES,
 )
+
+__all__ = ["collect_requires_bounds", "make_explicit", "fuse_compositions"]
 
 
 def collect_requires_bounds(

@@ -1,9 +1,15 @@
+# Copyright (c) 2024 David Boetius
+# Licensed under the MIT license
+import numpy as np
+import scipy.stats
 import torch
 
-from .probability_distribution import UnivarianteDistribution
+from .probability_distribution import UnivariateDistribution
+
+__all__ = ["UnivariateContinuousDistribution", "UnivariateDiscreteDistribution", "wrap"]
 
 
-class UnivariateContinuousDistribution(UnivarianteDistribution):
+class UnivariateContinuousDistribution(UnivariateDistribution):
     """
     Wraps a continuous univariate (one-dimensional) probability distribution that
     allows evaluating the cumulative distribution function (cdf) and
@@ -35,19 +41,27 @@ class UnivariateContinuousDistribution(UnivarianteDistribution):
     Example: :code:`UnivariateContinuousDistribution(scipy.stats.norm)`
     """
 
-    def __init__(self, distribution, bounds: tuple[float, float] | None = None):
+    def __init__(
+        self,
+        distribution,
+        bounds: tuple[float, float] | None = None,
+        dtype: torch.dtype = torch.double,
+    ):
         """
         Wraps :code:`distribution` as a :code:`UnivariateContinuousDistribution`.
 
         :param distribution: The distribution to wrap.
         :param bounds: The base interval for truncating :code:`distribution`.
          If :code:`bounds` is :code:`None`, the distribution isn't truncated.
+        :param dtype: The floating point `torch` data type
+         the values returned by :code:`distribution` are cast to.
         """
         self.__distribution = distribution
         self.__total_mass = 1.0
         if bounds is not None:
             lb, ub = bounds
             self.__total_mass = distribution.cdf(ub) - distribution.cdf(lb)
+        self.__dtype = dtype
 
     def probability(self, event: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
         a, b = event
@@ -57,7 +71,10 @@ class UnivariateContinuousDistribution(UnivarianteDistribution):
         cdf_high = self.__distribution.cdf(b)
         cdf_low = self.__distribution.cdf(a)
         prob = (cdf_high - cdf_low) / self.__total_mass
-        prob = torch.as_tensor(prob, device=orig_device)
+        prob = torch.as_tensor(prob, device=orig_device, dtype=self.__dtype)
+        # if a > b, cdf_high - cdf_low is negative, however the event is actually
+        # empty, therefore we set prob = 0.0
+        prob = torch.clamp(prob, min=0.0)
         return prob
 
     def sample(self, num_samples: int, seed=None) -> torch.Tensor:
@@ -66,10 +83,18 @@ class UnivariateContinuousDistribution(UnivarianteDistribution):
         if seed is not None:
             seed = seed % 2**32
         samples = self.__distribution.rvs(size=num_samples, random_state=seed)
-        return torch.as_tensor(samples, dtype=torch.get_default_dtype())
+        return torch.as_tensor(samples, dtype=self.__dtype)
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return self.__dtype
+
+    @dtype.setter
+    def dtype(self, dtype):
+        self.__dtype = dtype
 
 
-class UnivariateDiscreteDistribution(UnivarianteDistribution):
+class UnivariateDiscreteDistribution(UnivariateDistribution):
     """
     Wraps a discrete univariate (1d) probability distribution that provides a
     probability mass function (pmf) and obtaining random samples (rvs)
@@ -91,18 +116,26 @@ class UnivariateDiscreteDistribution(UnivarianteDistribution):
     Example: :code:`UnivariateDiscreteDistribution(scipy.stats.bernoulli)`
     """
 
-    def __init__(self, distribution):
+    def __init__(self, distribution, dtype: torch.dtype = torch.double):
+        """
+        Wraps :code:`distribution` as a :code:`UnivariateDiscreteDistribution`.
+
+        :param distribution: The distribution to wrap.
+        :param dtype: The floating point `torch` data type
+         the values returned by :code:`distribution` are cast to.
+        """
         self.__distribution = distribution
+        self.__dtype = dtype
 
     def probability(self, event: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
         a, b = event
         min_ = torch.min(a).ceil()
         max_ = torch.max(b).floor()
         # Add 0.1 since arange excludes the end point
-        integers = torch.arange(min_, max_ + 0.1, step=1)
+        integers = torch.arange(min_, max_ + 0.1, step=1, dtype=self.__dtype)
         integers = integers.detach().cpu()
         probs = self.__distribution.pmf(integers)
-        probs = torch.as_tensor(probs, device=a.device)
+        probs = torch.as_tensor(probs, device=a.device, dtype=self.__dtype)
         # reshape a, b and integers for broadcasting
         a = a.reshape(-1, 1)
         b = b.reshape(-1, 1)
@@ -116,4 +149,12 @@ class UnivariateDiscreteDistribution(UnivarianteDistribution):
         if seed is not None:
             seed = seed % 2**32
         samples = self.__distribution.rvs(size=num_samples, random_state=seed)
-        return torch.as_tensor(samples, dtype=torch.get_default_dtype())
+        return torch.as_tensor(samples, dtype=self.__dtype)
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return self.__dtype
+
+    @dtype.setter
+    def dtype(self, dtype):
+        self.__dtype = dtype

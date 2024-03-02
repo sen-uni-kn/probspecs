@@ -3,8 +3,9 @@
 import numpy as np
 import torch
 from sklearn.mixture import GaussianMixture
-from scipy.stats import norm, truncnorm
+from scipy.stats import norm, truncnorm, beta
 
+from probspecs import distributions
 from probspecs.distributions import MixtureModel, UnivariateContinuousDistribution
 
 import pytest
@@ -21,8 +22,7 @@ def mixture_model_1():
     )
 
 
-@pytest.mark.parametrize("bounds", [None, (torch.tensor(-10), torch.tensor(20))])
-def test_from_gaussian_mixture(bounds):
+def test_from_gaussian_mixture():
     np.random.seed(94485665)
     data = np.random.lognormal(0, 1, size=(1000, 1))
     data += np.random.normal(10, 2, size=(1000, 1))
@@ -30,44 +30,143 @@ def test_from_gaussian_mixture(bounds):
     gmm = GaussianMixture(n_components=3)
     gmm.fit(data)
 
-    distribution = MixtureModel.from_gaussian_mixture(gmm, bounds)
+    distribution = MixtureModel.from_gaussian_mixture(gmm)
     print(distribution.weights, distribution.distributions)
 
 
+def test_fit_truncnorm_mixture():
+    rng = np.random.default_rng(303370415504141)
+    data = np.vstack(
+        [
+            rng.normal(loc=-2.0, scale=1.0, size=(3000, 1)),
+            rng.normal(loc=3.0, scale=1.5, size=(6000, 1)),
+            rng.normal(loc=-20.0, scale=7.0, size=(1000, 1)),
+        ]
+    )
+    mixture = MixtureModel.fit_truncnorm_mixture(
+        data,
+        bounds=(-22.0, 10.0),
+        n_components=3,
+        n_init=1,
+        seed=rng.integers(0, 2**32, size=1).item(),
+    )
+    print(mixture.weights)
+
+
+def test_fit_truncnorm_mixture_highly_concentrated():
+    rng = np.random.default_rng(2370415204141)
+    data = np.vstack(
+        [
+            np.zeros(100).reshape(-1, 1),
+            rng.normal(loc=-2.0, scale=1.0, size=(100, 1)),
+            rng.normal(loc=-2.0, scale=1.0, size=(100, 1)),
+        ]
+    )
+    mixture = MixtureModel.fit_truncnorm_mixture(
+        data,
+        bounds=(-5.0, 5.0),
+        n_components=3,
+        n_init=1,
+        seed=rng.integers(0, 2**32, size=1).item(),
+    )
+    print(mixture.weights)
+
+
+def test_fit_truncnorm_mixture_too_many_components():
+    rng = np.random.default_rng(303370415504141)
+    data = np.vstack(
+        [
+            rng.normal(loc=-2.0, scale=1.0, size=(3000, 1)),
+            rng.normal(loc=3.0, scale=1.5, size=(6000, 1)),
+            rng.normal(loc=-20.0, scale=7.0, size=(1000, 1)),
+        ]
+    )
+    mixture = MixtureModel.fit_truncnorm_mixture(
+        data,
+        bounds=(-22.0, 10.0),
+        n_components=15,
+        n_init=1,
+        seed=rng.integers(0, 2**32, size=1).item(),
+    )
+    print(mixture.weights)
+
+
+def test_fit_mixture_1():
+    rng = np.random.default_rng(60713454971938)
+    data = np.vstack(
+        [
+            rng.normal(loc=-2.0, scale=1.0, size=(3000, 1)),
+            rng.normal(loc=3.0, scale=1.5, size=(6000, 1)),
+            rng.normal(loc=-20.0, scale=7.0, size=(1000, 1)),
+        ]
+    )
+    mixture = MixtureModel.fit_mixture(
+        data,
+        ((norm, (("loc", -20.0, 3.0), ("scale", 0.1, 10.0)), {}),) * 3,
+        n_init=1,
+        seed=rng.integers(0, 2**32, size=1).item(),
+    )
+    print(mixture.weights)
+
+
+def test_fit_mixture_2():
+    rng = np.random.default_rng(420640267505409)
+    data = np.vstack(
+        [
+            rng.normal(loc=-2.0, scale=1.0, size=(3000, 1)),
+            rng.normal(loc=3.0, scale=1.5, size=(6000, 1)),
+            rng.normal(loc=-20.0, scale=7.0, size=(1000, 1)),
+        ]
+    )
+    mixture = MixtureModel.fit_mixture(
+        data,
+        (
+            (norm, (("loc", -20.0, 3.0), ("scale", 0.1, 10.0)), {}),
+            (
+                beta,
+                (("a", None, None), ("b", None, None)),
+                {"loc": -25.0, "scale": 30.0},
+            ),
+        ),
+        n_init=1,
+        seed=rng.integers(0, 2**32, size=1).item(),
+    )
+    print(mixture.weights)
+
+
 @pytest.mark.parametrize(
-    "event,probability_bounds",
+    "event,expected_probability",
     [
-        ((torch.tensor(-20.0), torch.tensor(20.0)), (0.999, 1.001)),
-        ((torch.tensor(-20.0), torch.tensor(0.0)), (0.699, 0.701)),
-        ((torch.tensor(0.0), torch.tensor(20.0)), (0.299, 0.391)),
-        ((torch.tensor(-10.0), torch.tensor(0.0)), (0.349, 0.351)),
-        ((torch.tensor(0.0), torch.tensor(10.0)), (0.149, 0.151)),
-        ((torch.tensor(-10.0), torch.tensor(10.0)), (0.499, 0.501)),
+        (([-20.0], [20.0]), 1.0),
+        (([-20.0], [0.0]), 0.7),
+        (([0.0], [20.0]), 0.3),
+        (([-10.0], [0.0]), 0.35),
+        (([0.0], 10.0), 0.15),
+        (([-10.0], [10.0]), 0.5),
+        (
+            (
+                [-20.0, -20.0, 0.0, -10.0, 0.0, -10.0],
+                [20.0, 0.0, 20.0, 0.0, 10.0, 10.0],
+            ),
+            [1.0, 0.7, 0.3, 0.35, 0.15, 0.5],
+        ),
     ],
 )
-def test_probability_1(mixture_model_1, event, probability_bounds):
-    lower, upper = probability_bounds
-    assert lower <= mixture_model_1.probability(event) <= upper
-
-
-def test_probability_1_batched(mixture_model_1):
-    event_lb = torch.tensor([-20.0, -20.0, 0.0, -10.0, 0.0, -10.0])
-    event_ub = torch.tensor([20.0, 0.0, 20.0, 0.0, 10.0, 10.0])
-    expected_prob = torch.tensor([1.0, 0.7, 0.3, 0.35, 0.15, 0.5], dtype=torch.double)
-    assert torch.allclose(
-        mixture_model_1.probability((event_lb, event_ub)), expected_prob
-    )
+def test_probability_1(mixture_model_1, event, expected_probability):
+    dtype = mixture_model_1.dtype
+    event = torch.tensor(event[0], dtype=dtype), torch.tensor(event[1], dtype=dtype)
+    expected_probability = torch.tensor(expected_probability, dtype=dtype)
+    assert torch.allclose(mixture_model_1.probability(event), expected_probability)
 
 
 @pytest.mark.parametrize("batch_size", [1, 100])
 def test_sample(batch_size):
+    # create mixture model so that results lie in [-15, -5] or [5, 15]
     mixture_model = MixtureModel(
         weights=[0.85, 0.15],
         distributions=(
-            UnivariateContinuousDistribution(
-                truncnorm(a=-15, b=-5, loc=-10, scale=0.5)
-            ),
-            UnivariateContinuousDistribution(truncnorm(a=5, b=15, loc=10, scale=0.5)),
+            distributions.wrap(truncnorm(a=-10, b=10, loc=-10, scale=0.5)),
+            distributions.wrap(truncnorm(a=-10, b=10, loc=10, scale=0.5)),
         ),
     )
 
@@ -75,19 +174,5 @@ def test_sample(batch_size):
     assert torch.all(((-15.0 <= x) & (x <= -5.0)) | ((5.0 <= x) & (x <= 15.0)))
 
 
-@pytest.mark.parametrize(
-    "event,probability_bounds",
-    [
-        ((torch.tensor(-3.0), torch.tensor(3.0)), (0.999, 1.001)),
-        ((torch.tensor(-3.0), torch.tensor(0.0)), (0.4, 0.6)),
-        ((torch.tensor(0.0), torch.tensor(3.0)), (0.4, 0.6)),
-    ],
-)
-def test_truncated_gaussian_mixture(event, probability_bounds):
-    np.random.seed(74256315)
-    data = np.random.normal(-3, 1, size=(1000, 1))
-    data += np.random.normal(3, 1, size=(1000, 1))
-    gmm = GaussianMixture(n_components=4)
-    gmm.fit(data)
-
-    distribution = MixtureModel.from_gaussian_mixture(gmm, bounds=(-3.0, 3.0))
+if __name__ == "__main__":
+    pytest.main()

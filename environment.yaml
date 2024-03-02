@@ -25,6 +25,7 @@ dependencies:
     - adult-dataset>=3.0.0,<4.0
     - multiprocess==0.70.15
     - scikit-learn>=1.3.2,<1.4.0
+    - kmodes==0.12.2
     - optuna>=3.5.0,<4.0
     - matplotlib>=3.8.2,<3.9.0
     - jupyter

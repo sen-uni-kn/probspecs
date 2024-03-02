@@ -607,7 +607,7 @@ def propose_splits(
         is_invalid_ = ubs_flat[:, dim_] == lbs_flat[:, dim_]
         return split, is_invalid_
 
-    def ordinal_split(dim_) -> tuple[Split, torch.Tensor]:
+    def integer_split(dim_) -> tuple[Split, torch.Tensor]:
         midpoint = (ubs_flat[:, dim_] + lbs_flat[:, dim_]) / 2.0
         # two splits: set lower bound to midpoint
         # and set upper bound to midpoint
@@ -690,9 +690,9 @@ def propose_splits(
                         split, invalid = continuous_split(dim)
                         splits[dim] = split
                         is_invalid[dim] = invalid
-                    case TabularInputSpace.AttributeType.ORDINAL:
+                    case TabularInputSpace.AttributeType.INTEGER:
                         dim = offset + layout[attr_name]
-                        split, invalid = ordinal_split(dim)
+                        split, invalid = integer_split(dim)
                         splits[dim] = split
                         is_invalid[dim] = invalid
                     case TabularInputSpace.AttributeType.CATEGORICAL:

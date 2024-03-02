@@ -4,7 +4,7 @@ from scipy.stats import norm, bernoulli
 import torch
 import pytest
 
-from probspecs import (
+from probspecs.distributions import (
     MultivariateIndependent,
     UnivariateContinuousDistribution,
     UnivariateDiscreteDistribution,
@@ -55,8 +55,12 @@ def test_stack_multivariates_1():
     d2 = CategoricalOneHot(p2)
     multivariate = MultivariateIndependent(d1, d2, event_shape=(10,))
 
+    print(multivariate.probability((torch.zeros(10), torch.ones(10))))
+    print(multivariate.dtype)
+
     assert torch.isclose(
-        multivariate.probability((torch.zeros(10), torch.ones(10))), torch.ones(())
+        multivariate.probability((torch.zeros(10), torch.ones(10))),
+        torch.ones((), dtype=d1.dtype),
     )
 
 
@@ -74,7 +78,9 @@ def test_stack_multivariates_2():
     value1 = torch.eye(4)[value1]
     lb = torch.hstack([value1, torch.zeros(n, 6)])
     ub = torch.hstack([value1, torch.ones(n, 6)])
-    assert torch.allclose(multivariate.probability((lb, ub)), expected_prob)
+    assert torch.allclose(
+        multivariate.probability((lb, ub)), expected_prob.to(d1.dtype)
+    )
 
 
 def test_stack_multivariates_3():
@@ -91,7 +97,9 @@ def test_stack_multivariates_3():
     value2 = torch.eye(6)[value2]
     lb = torch.hstack([torch.zeros(n, 4), value2])
     ub = torch.hstack([torch.ones(n, 4), value2])
-    assert torch.allclose(multivariate.probability((lb, ub)), expected_prob)
+    assert torch.allclose(
+        multivariate.probability((lb, ub)), expected_prob.to(d1.dtype)
+    )
 
 
 def test_stack_multivariates_4():
@@ -112,7 +120,9 @@ def test_stack_multivariates_4():
     value2 = torch.eye(6)[value2]
     lb = torch.hstack([value1, value2])
     ub = torch.hstack([value1, value2])
-    assert torch.allclose(multivariate.probability((lb, ub)), expected_prob)
+    assert torch.allclose(
+        multivariate.probability((lb, ub)), expected_prob.to(d1.dtype)
+    )
 
 
 def test_stack_multivariates_5():
@@ -143,4 +153,10 @@ def test_stack_multivariates_5():
     value2 = value21 + value22
     lb = torch.zeros(n, 10)
     ub = torch.hstack([value1, value2])
-    assert torch.allclose(multivariate.probability((lb, ub)), expected_prob)
+    assert torch.allclose(
+        multivariate.probability((lb, ub)), expected_prob.to(d1.dtype)
+    )
+
+
+if __name__ == "__main__":
+    pytest.main()

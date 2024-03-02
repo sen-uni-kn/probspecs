@@ -7,6 +7,8 @@ from typing import Callable
 
 import torch
 
+__all__ = ["WrapperModule"]
+
 
 class WrapperModule(torch.nn.Module):
     """

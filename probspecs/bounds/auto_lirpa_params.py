@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from frozendict import frozendict
 
 
+__all__ = ["AutoLiRPAParams"]
+
+
 @dataclass
 class AutoLiRPAParams:
     """

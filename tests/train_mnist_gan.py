@@ -7,7 +7,6 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
 import torchvision.utils as vutils
-import matplotlib.pyplot as plt
 
 
 if __name__ == "__main__":

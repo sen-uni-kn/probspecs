@@ -16,7 +16,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-p",
         "--population-model",
-        choices=("independent", "bayesian-network", "neural-network"),
+        choices=("independent", "bayesian-network"),
         required=True,
     )
     parser.add_argument(
@@ -35,22 +35,10 @@ if __name__ == "__main__":
         case _:
             raise ValueError()
 
-    match args.population_model:
-        case "independent":
-            input_distribution, input_space, pop_model_transform = torch.load(
-                resource_dir / "independent_population_model.pyt"
-            )
-        case "factor_analysis":
-            with open(resource_dir / "factor_analysis_input_space.dill", "rb") as file:
-                input_space = dill.load(file)
-            with open(resource_dir / "factor_analysis_distribution.dill", "rb") as file:
-                input_distribution = dill.load(file)
-            pop_model_transform = torch.load(
-                resource_dir / "factor_analysis_population_model.pyt"
-            )
-        case _:
-            raise ValueError()
-
+    population_model = args.population_model.replace("-", "_")
+    input_distribution, input_space, pop_model_transform = torch.load(
+        resource_dir / f"{population_model}_population_model.pyt"
+    )
     classifier = torch.load(resource_dir / args.network)
 
     x = ExternalVariable("x")
@@ -91,9 +79,9 @@ if __name__ == "__main__":
         networks,
         {"x": input_space},
         {"x": input_distribution},
-        batch_size=128,
+        batch_size=512,
         split_heuristic="IBP",
-        worker_devices=("cpu", "cpu"),
+        worker_devices=("cpu",),
     )
     end_time = time()
     print(verification_status)

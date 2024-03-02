@@ -3,6 +3,8 @@
 import torch
 import torch.nn.functional as F
 
+__all__ = ["clamp", "maximum", "minimum"]
+
 
 def clamp(input, min=None, max=None):
     """Implements :code:`torch.clamp` using ReLU, addition, and subtraction."""

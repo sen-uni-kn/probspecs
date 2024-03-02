@@ -6,6 +6,9 @@ from math import prod
 import torch
 
 
+__all__ = ["BranchStore"]
+
+
 class BranchStore:
     """
     A data structure for storing branches in branch and bound

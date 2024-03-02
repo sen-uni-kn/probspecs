@@ -5,6 +5,8 @@ from typing import Union
 import numpy as np
 import torch
 
+__all__ = ["TrinaryLogic"]
+
 
 class TrinaryLogic(int):
     """

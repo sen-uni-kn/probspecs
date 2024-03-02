@@ -34,6 +34,7 @@ __all__ = [
     "compose",
     "BOOL_TERM",
     "NUMERIC_TERM",
+    "TERM_TYPES",
 ]
 
 

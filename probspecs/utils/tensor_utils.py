@@ -5,6 +5,8 @@ from typing import Sequence
 import numpy as np
 import torch
 
+__all__ = ["TENSOR_LIKE", "to_tensor", "copy_to_tensor"]
+
 
 # exclude tuples because of potential risk of confusion with bound tuples
 TENSOR_LIKE = (
@@ -18,7 +20,9 @@ TENSOR_LIKE = (
 )
 
 
-def to_tensor(array_like: TENSOR_LIKE) -> torch.Tensor:
+def to_tensor(
+    array_like: TENSOR_LIKE, dtype: torch.dtype | None = None
+) -> torch.Tensor:
     """
     Transforms an array like (torch.Tensor, np.ndarray, list, tuple, ...)
     into a tensor.
@@ -28,11 +32,11 @@ def to_tensor(array_like: TENSOR_LIKE) -> torch.Tensor:
     Other objects are converted using `torch.tensor`.
     """
     if isinstance(array_like, torch.Tensor):
-        return array_like
+        return array_like.to(dtype)
     elif isinstance(array_like, np.ndarray):
-        return torch.as_tensor(array_like)
+        return torch.as_tensor(array_like, dtype=dtype)
     else:
-        return torch.tensor(array_like)
+        return torch.tensor(array_like, dtype=dtype)
 
 
 def copy_to_tensor(array_like: TENSOR_LIKE) -> torch.Tensor:
