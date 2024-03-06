@@ -3,7 +3,7 @@
 import argparse
 from time import time
 
-from probspecs import verify, prob, compose, ExternalFunction, ExternalVariable
+from probspecs import Verifier, prob, compose, ExternalFunction, ExternalVariable
 from experiments.fairsquare.population_models import *
 from experiments.fairsquare.classifiers import *
 
@@ -73,15 +73,16 @@ if __name__ == "__main__":
     p_advantaged = prob(high_income, condition=male & base_cond)
     is_fair = p_disadvantaged / p_advantaged > 1 - args.fairness_eps
 
+    verifier = Verifier(
+        worker_devices="cpu",
+        probability_bounds_config={"batch_size": 1024},
+    )
     start_time = time()
-    verification_status, probability_bounds = verify(
+    verification_status, probability_bounds = verifier.verify(
         is_fair,
         networks,
         {"x": pop_model.input_space},
         {"x": pop_model.probability_distribution},
-        batch_size=1024,
-        split_heuristic="IBP",
-        worker_devices=("cpu",),
     )
     end_time = time()
     print(verification_status)

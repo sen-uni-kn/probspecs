@@ -1,125 +1,198 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
+import typing
 from typing import Generator, Literal
 
 import torch
+from frozendict import frozendict
 from torch import nn
 from auto_LiRPA import BoundedModule
 
-from .auto_lirpa_params import AutoLiRPAParams
 from .branch_store import BranchStore
 from .utils import construct_bounded_tensor
+from ..utils.config_container import ConfigContainer
 
-__all__ = ["network_bounds", "split_ibp", "split_longest_edge"]
+__all__ = ["NetworkBounds", "split_ibp", "split_longest_edge"]
 
 
-def network_bounds(
-    network: nn.Module,
-    input_bounds: tuple[torch.Tensor, torch.Tensor],
-    batch_size: int = 128,
-    auto_lirpa_params: AutoLiRPAParams = AutoLiRPAParams(),
-    split_heuristic: Literal["IBP", "longest-edge"] = "IBP",
-    device: str | torch.device | None = None,
-) -> Generator[tuple[torch.Tensor, torch.Tensor], None, None]:
+SPLIT_HEURISTICS_TYPE: typing.Final = Literal[
+    "IBP",
+    "longest-edge",
+]
+SPLIT_HEURISTICS: typing.Final[tuple[SPLIT_HEURISTICS_TYPE, ...]] = typing.get_args(
+    SPLIT_HEURISTICS_TYPE
+)
+
+
+class NetworkBounds(ConfigContainer):
     """
     Computes a sequence of refined bounds for the output of :code:`network`.
     With each yield of this generator, the lower and upper bounds that it
     produces improve, meaning that the lower bound increases while the upper
     bound decreases.
 
-    To refine the previously computed bounds, :code:`network_bounds` performs
+    To refine the previously computed bounds, :code:`NetworkBounds` performs
     branch and bound with input splitting.
-
-    :param network: The network for which to compute bounds.
-    :param input_bounds: A lower and an upper bound on the network input.
-     The bounds may not have batch dimensions.
-    :param batch_size: The number of branches to consider at a time.
-    :param auto_lirpa_params: Parameters for running auto_LiRPA.
-    :param split_heuristic: Which heuristic to use for selecting dimensions to split.
-    :param device: The device to compute on.
-     If None, the tensors remain on the device they already reside on.
-    :return: A generator that yields improving lower and upper bounds.
     """
-    initial_in_lb, initial_in_ub = input_bounds
-    initial_in_lb = initial_in_lb.unsqueeze(0).to(device=device)
-    initial_in_ub = initial_in_ub.unsqueeze(0).to(device=device)
-    network = BoundedModule(network, initial_in_lb, auto_lirpa_params.bound_ops, device)
-    bounded_tensor = construct_bounded_tensor(initial_in_lb, initial_in_ub)
 
-    best_lb, best_ub = network.compute_bounds(
-        x=(bounded_tensor,), method=auto_lirpa_params.method
-    )
-    yield (best_lb, best_ub)
-
-    branches = BranchStore(initial_in_lb.shape[1:], best_lb.shape[1:], device)
-    branches.append(
-        in_lbs=initial_in_lb, in_ubs=initial_in_ub, out_lbs=best_lb, out_ubs=best_ub
-    )
-
-    def score_branches():
+    def __init__(
+        self,
+        batch_size: int = 128,
+        split_heuristic: SPLIT_HEURISTICS_TYPE = "IBP",
+        auto_lirpa_method: str = "CROWN",
+        auto_lirpa_ops: dict = frozendict(
+            {"optimize_bound_args": frozendict({"iteration": 20, "lr_alpha": 0.1})}
+        ),
+        device: str | torch.device | None = None,
+    ):
         """
-        A score how close the lb/ub in branch_bounds is to best_lb/best_ub.
-        Branches with lower scores are selected for branching.
+        Creates a new :code:`NetworkBounds` instance with the given configuration.
+
+        :param batch_size: The number of branches to consider at a time.
+        :param split_heuristic: Which heuristic to use for selecting dimensions
+         to split.
+        :param auto_lirpa_method: The :code:`auto_LiRPA` bound propagation method
+         to use for computing bounds.
+        :param auto_lirpa_ops: :code:`auto_LiRPA` bound propagation options.
+         More details in the :func:`auto_LiRPA.BoundedModule` documentation.
+        :param device: The device to compute on.
+         If None, the tensors remain on the device they already reside on.
         """
-        output_dims = tuple(range(1, len(branches.output_shape) + 1))
-        return torch.minimum(
-            torch.amin(abs(best_lb - branches.out_lbs), dim=output_dims),
-            torch.amin(abs(best_ub - branches.out_ubs), dim=output_dims),
+        super().__init__(
+            batch_size=batch_size,
+            split_heuristic=split_heuristic,
+            auto_lirpa_method=auto_lirpa_method,
+            auto_lirpa_ops=auto_lirpa_ops,
+            device=device,
         )
 
-    while True:
-        # 1. select a batch of branches
-        branch_scores = score_branches()
-        branches.sort(branch_scores, descending=False)
-        selected_branches = branches.pop(batch_size)
+    options = frozenset(
+        {
+            "batch_size",
+            "split_heuristic",
+            "auto_lirpa_method",
+            "auto_lirpa_ops",
+            "device",
+        }
+    )
 
-        # 2. select dimensions to split
-        if split_heuristic.upper() == "IBP":
-            split_dims = split_ibp(
-                network,
-                selected_branches,
-                best_lb,
-                best_ub,
-            )
-        elif split_heuristic.lower() == "longest-edge":
-            split_dims = split_longest_edge(selected_branches)
-        else:
+    def configure(self, **kwargs):
+        """
+        Configures this :code:`NetworkBounds` instance.
+        The available configurations are documented at :code:`__init__`.
+        """
+        if (
+            "split_heuristic" in kwargs
+            and kwargs["split_heuristic"] not in SPLIT_HEURISTICS
+        ):
+            heuristic = kwargs["split_heuristic"]
             raise ValueError(
-                f"Unknown split heuristic: {split_heuristic}."
-                f"Use either 'IBP' or 'longest-edge'."
+                f"Unknown split heuristic: {heuristic}."
+                f"Use one from {', '.join(SPLIT_HEURISTICS)}."
+            )
+        super().configure(**kwargs)
+
+    def bound(
+        self,
+        network: nn.Module,
+        input_bounds: tuple[torch.Tensor, torch.Tensor],
+    ) -> Generator[tuple[torch.Tensor, torch.Tensor], None, None]:
+        """
+        Computes a sequence of refined bounds for the output of :code:`network`.
+        With each yield of this generator, the lower and upper bounds that it
+        produces improve, meaning that the lower bound increases while the upper
+        bound decreases.
+
+        To refine the previously computed bounds, :code:`network_bounds` performs
+        branch and bound with input splitting.
+
+        :param network: The network for which to compute bounds.
+        :param input_bounds: A lower and an upper bound on the network input.
+         The bounds may not have batch dimensions.
+        :return: A generator that yields improving lower and upper bounds.
+        """
+        initial_in_lb, initial_in_ub = input_bounds
+        initial_in_lb = initial_in_lb.unsqueeze(0).to(device=self.device)
+        initial_in_ub = initial_in_ub.unsqueeze(0).to(device=self.device)
+        network = BoundedModule(
+            network, initial_in_lb, self.auto_lirpa_ops, self.device
+        )
+        bounded_tensor = construct_bounded_tensor(initial_in_lb, initial_in_ub)
+
+        best_lb, best_ub = network.compute_bounds(
+            x=(bounded_tensor,), method=self.auto_lirpa_method
+        )
+        yield (best_lb, best_ub)
+
+        branches = BranchStore(initial_in_lb.shape[1:], best_lb.shape[1:], self.device)
+        branches.append(
+            in_lbs=initial_in_lb, in_ubs=initial_in_ub, out_lbs=best_lb, out_ubs=best_ub
+        )
+
+        def score_branches():
+            """
+            A score how close the lb/ub in branch_bounds is to best_lb/best_ub.
+            Branches with lower scores are selected for branching.
+            """
+            output_dims = tuple(range(1, len(branches.output_shape) + 1))
+            return torch.minimum(
+                torch.amin(abs(best_lb - branches.out_lbs), dim=output_dims),
+                torch.amin(abs(best_ub - branches.out_ubs), dim=output_dims),
             )
 
-        # 3. split branches
-        in_lbs_flat = selected_branches.in_lbs.flatten(1)
-        in_ubs_flat = selected_branches.in_ubs.flatten(1)
-        split_dim_lbs = in_lbs_flat.index_select(-1, split_dims)
-        split_dim_ubs = in_ubs_flat.index_select(-1, split_dims)
-        midpoints = (split_dim_ubs + split_dim_lbs) / 2.0
-        # split into: lower part = [lb, mid] and upper part = [mid, ub]
-        lower_part_ubs = in_ubs_flat.detach().clone()
-        lower_part_ubs[:, split_dims] = midpoints
-        upper_part_lbs = in_lbs_flat.detach().clone()
-        upper_part_lbs[:, split_dims] = midpoints
-        split_in_lbs = torch.vstack([in_lbs_flat, upper_part_lbs])
-        split_in_ubs = torch.vstack([lower_part_ubs, in_ubs_flat])
-        split_in_lbs = split_in_lbs.reshape(-1, *branches.input_shape)
-        split_in_ubs = split_in_ubs.reshape(-1, *branches.input_shape)
+        while True:
+            # 1. select a batch of branches
+            branch_scores = score_branches()
+            branches.sort(branch_scores, descending=False)
+            selected_branches = branches.pop(self.batch_size)
 
-        # 4. compute bounds
-        bounded_tensor = construct_bounded_tensor(split_in_lbs, split_in_ubs)
-        new_lbs, new_ubs = network.compute_bounds(
-            x=(bounded_tensor,), method=auto_lirpa_params.method
-        )
+            # 2. select dimensions to split
+            if self.split_heuristic == "IBP":
+                split_dims = split_ibp(
+                    network,
+                    selected_branches,
+                    best_lb,
+                    best_ub,
+                )
+            elif self.split_heuristic == "longest-edge":
+                split_dims = split_longest_edge(selected_branches)
+            else:
+                raise NotImplementedError()
 
-        # 5. update branches
-        branches.append(
-            in_lbs=split_in_lbs, in_ubs=split_in_ubs, out_lbs=new_lbs, out_ubs=new_ubs
-        )
+            # 3. split branches
+            in_lbs_flat = selected_branches.in_lbs.flatten(1)
+            in_ubs_flat = selected_branches.in_ubs.flatten(1)
+            split_dim_lbs = in_lbs_flat.index_select(-1, split_dims)
+            split_dim_ubs = in_ubs_flat.index_select(-1, split_dims)
+            midpoints = (split_dim_ubs + split_dim_lbs) / 2.0
+            # split into: lower part = [lb, mid] and upper part = [mid, ub]
+            lower_part_ubs = in_ubs_flat.detach().clone()
+            lower_part_ubs[:, split_dims] = midpoints
+            upper_part_lbs = in_lbs_flat.detach().clone()
+            upper_part_lbs[:, split_dims] = midpoints
+            split_in_lbs = torch.vstack([in_lbs_flat, upper_part_lbs])
+            split_in_ubs = torch.vstack([lower_part_ubs, in_ubs_flat])
+            split_in_lbs = split_in_lbs.reshape(-1, *branches.input_shape)
+            split_in_ubs = split_in_ubs.reshape(-1, *branches.input_shape)
 
-        # 6. update best upper/lower bound
-        best_lb = torch.amin(branches.out_lbs, dim=0)
-        best_ub = torch.amax(branches.out_ubs, dim=0)
-        yield (best_lb, best_ub)
+            # 4. compute bounds
+            bounded_tensor = construct_bounded_tensor(split_in_lbs, split_in_ubs)
+            new_lbs, new_ubs = network.compute_bounds(
+                x=(bounded_tensor,), method=self.auto_lirpa_method
+            )
+
+            # 5. update branches
+            branches.append(
+                in_lbs=split_in_lbs,
+                in_ubs=split_in_ubs,
+                out_lbs=new_lbs,
+                out_ubs=new_ubs,
+            )
+
+            # 6. update best upper/lower bound
+            best_lb = torch.amin(branches.out_lbs, dim=0)
+            best_ub = torch.amax(branches.out_ubs, dim=0)
+            yield (best_lb, best_ub)
 
 
 def split_ibp(
