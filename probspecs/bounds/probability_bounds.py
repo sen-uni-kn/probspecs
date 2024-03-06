@@ -41,7 +41,11 @@ __all__ = [
     "SPLIT_HEURISTICS",
     "SPLIT_HEURISTICS_TYPE",
     "ProbabilityBounds",
+    "SatBounds",
+    "ProbabilityMass",
+    "ScoreBranches",
     "Split",
+    "SelectSplits",
 ]
 
 
@@ -60,22 +64,20 @@ class ProbabilityBounds(ConfigContainer):
     There are various heuristics that the algorithm can use to select splits.
 
     Split heuristics:
-     - :code:`"IBP"`: smart branching with IBP.
-        Split the dimension that leads to the best IBP bounds.
+     - :code:`"smart_branching"`: smart branching with IBP or CROWN.
+        Split the dimension that leads to the best estimated bounds.
+        The bounding method to use can be selected using the additional
+        :code:`auto_lirpa_method` parameter (default is `"IBP"`).
+        You can specify this parameter using the :code:`split_heuristic_params`
+        argument.
         This heuristic has an additional parameter :code:`better_branch`
         that determines which branch that results from a split is selected
         to evaluate the split.
-        You can specify this parameter using the :code:`split_heuristic_params`
-        argument.
         By default (:code:`better_branch=True`), a split is evaluated using the
         bounds of the resulting branch with the better bounds.
         When :code:`better_branch=True`, instead the branch with the worse bounds
         is used.
         This is the strategy of BaBSR [BunelEtAl2020]_.
-     - :code:`"CROWN"`: smart branching with CROWN.
-        Split the dimension that leads to the best CROWN bounds.
-        This split heuristic also has a :code:`better_branch? parameter.
-        See :code:`IBP` for more details on this parameter.
      - :code:`"longest-edge"`: Split the dimension that has the largest diameter.
      - :code:`"normalized-longest-edge"`: Split the dimension that has the largest
         diameter, where the diameter of each dimension is normalized by the initial
@@ -94,14 +96,12 @@ class ProbabilityBounds(ConfigContainer):
         self,
         batch_size: int = 128,
         branch_selection_heuristic: "BRANCH_SELECTION_HEURISTIC_TYPE" = "prob-mass",
-        split_heuristic: "SPLIT_HEURISTICS_TYPE" = "IBP",
+        split_heuristic: "SPLIT_HEURISTICS_TYPE" = "smart-branching",
         split_heuristic_params: dict[
-            Literal["better_branch", "normalize"], bool
-        ] = frozendict({"better_branch": True, "normalize": True}),
+            Literal["auto_lirpa_method", "better_branch", "normalize"], bool
+        ] = frozendict(),
         auto_lirpa_method: str = "CROWN",
-        auto_lirpa_ops: dict = frozendict(
-            {"optimize_bound_args": frozendict({"iteration": 20, "lr_alpha": 0.1})}
-        ),
+        auto_lirpa_ops: dict = frozendict(),
         device: str | torch.device | None = None,
     ):
         """
@@ -112,7 +112,9 @@ class ProbabilityBounds(ConfigContainer):
          to split.
         :param split_heuristic: Which heuristic to use for selecting dimensions to split.
         :param split_heuristic_params: Additional parameters of the split heuristic:
-         - `"better_branch"`: When evaluating splits in `IBP` or `CROWN`,
+         - `"auto_lirpa_method"`: The auto_LiRPA method to use in smart branching.
+           For example, `"IBP`" or "`CROWN`".
+         - `"better_branch"`: When evaluating splits in `smart_branching`,
            calculate with the branch with the better bounds that results from the
            split or the worse?
          - `"normalize"`: Whether to normalize edge lengths to the initial variable bounds
@@ -127,6 +129,12 @@ class ProbabilityBounds(ConfigContainer):
         :param device: The device to compute on.
          If None, the tensors remain on the device they already reside on.
         """
+        # Set the default split heuristic params if not given.
+        split_heuristic_params = split_heuristic_params | {
+            "auto_lirpa_method": "IBP",
+            "better_branch": True,
+            "normalize": True,
+        }
         super().__init__(
             batch_size=batch_size,
             branch_selection_heuristic=branch_selection_heuristic,
@@ -300,11 +308,10 @@ class ProbabilityBounds(ConfigContainer):
 
         while True:
             # 0. Remove branches where subj is certainly satisfied or certainly violated.
-            is_sat = branches.is_sat.squeeze()
-            certainly_sat_mask = TrinaryLogic.is_true(is_sat)
-            certainly_viol_mask = TrinaryLogic.is_false(is_sat)
-            prob_lb += torch.sum(branches.probability_mass[certainly_sat_mask])
-            prob_ub -= torch.sum(branches.probability_mass[certainly_viol_mask])
+            certainly_sat_mask = TrinaryLogic.is_true(branches.is_sat)
+            certainly_viol_mask = TrinaryLogic.is_false(branches.is_sat)
+            prob_lb += torch.sum(certainly_sat_mask * branches.probability_mass)
+            prob_ub -= torch.sum(certainly_viol_mask * branches.probability_mass)
             branches.drop(certainly_sat_mask | certainly_viol_mask)
 
             print(f"Probability Bounds ({subj}): lb={prob_lb}, ub={prob_ub}")
@@ -667,8 +674,8 @@ class ScoreBranches:
 
 
 SPLIT_HEURISTICS_TYPE: Final = Literal[
-    "IBP",
-    "CROWN",
+    "smart-branching",
+    "prob-improve-smart-branching",
     "longest-edge",
     "random",
 ]
@@ -779,9 +786,11 @@ class SelectSplits:
 
     def select_splits(self, branches: BranchStore) -> Split:
         match self._config.split_heuristic:
-            case "IBP" | "CROWN":
+            case "smart-branching":
                 return self.smart_branching(branches)
-            case "longest-edge" | "normalized-longest-edge":
+            case "prob-improve-smart-branching":
+                return self.prob_improve_smart_branching(branches)
+            case "longest-edge":
                 return self.split_longest_edge(branches)
             case "random":
                 return self.split_random(branches)
@@ -800,9 +809,13 @@ class SelectSplits:
         You should select a cheap bounding algorithm, such as IBP for this task.
         This split strategy is an adaption of BaBSR from [BunelEtAl2020]_.
 
-        Each split is evaluated, either by selecting the branch resulting from the split
+        The algorithm to compute bounds can be selected using the
+        :code:`auto_lirpa_method` split heuristic parameter.
+
+        Each split is evaluated either by selecting the branch resulting from the split
         that has the better or worse bounds.
-        Which is selected is determined by the :code:`better_branch` argument.
+        Which is selected is determined by the :code:`better_branch`
+        split heuristic parameter.
         By default, the better bounds are used, but using the worse bounds may lead to
         a more balanced branching tree.
 
@@ -818,9 +831,7 @@ class SelectSplits:
             splits
         )
 
-        # The smart branching split heuristics have the same name as the Auto_LiRPA
-        # method used for computing bounds
-        method = self._config.split_heuristic
+        method = self._config.split_heuristic_params["auto_lirpa_method"]
         # We already use very large batch sizes here since left_lbs contains
         # num input dims * original batch size many elements.
         # To balance memory requirements better, it makes sense to perform ibp/crown
@@ -853,6 +864,73 @@ class SelectSplits:
         # Adapted from: BaBSR (Rudy Bunel, Jingyue Lu, Ilker Turkaslan, Philip H. S. Torr,
         # Pushmeet Kohli, M. Pawan Kumar: Branch and Bound for Piecewise Linear
         # Neural Network Verification. J. Mach. Learn. Res. 21: 42:1-42:39 (2020))
+        if self._config.split_heuristic_params["better_branch"]:
+            score_sat_lbs = torch.maximum(left_sat_lbs, right_sat_lbs)
+            score_sat_ubs = torch.minimum(left_sat_ubs, right_sat_ubs)
+        else:
+            score_sat_lbs = torch.minimum(left_sat_lbs, right_sat_lbs)
+            score_sat_ubs = torch.maximum(left_sat_ubs, right_sat_ubs)
+        select_score = torch.maximum(score_sat_lbs, -score_sat_ubs)
+        # At times splitting bounds that actually influence the output can lead
+        # to slightly worse bounds than splitting an input that does not influence
+        # the output due to floating point error.
+        # To avoid this, we round the scores.
+        select_score = torch.round(select_score, decimals=4)
+        # resolve ties in select_scores randomly to avoid always splitting on the
+        # early dimensions when bounds are very loose
+        permute = torch.randperm(
+            num_splits, generator=self._rng, device=self._rng.device
+        )
+        select_score = select_score[permute, :]
+        split_dims = torch.argmax(select_score, dim=0)
+        split_dims = permute[split_dims]
+        return splits.select(split_dims)
+
+    @torch.no_grad()
+    def prob_improve_smart_branching(self, branches: BranchStore) -> Split:
+        """
+        Select input dimensions to split.
+        In difference to :code:`smart_branching`, :code:`prob_improve_smart_branching`
+        weights the improvement of the estimated lower and upper satisfaction function
+        bounds by the probability mass of a branch.
+        The goal is to prioritize pruning branches with high probability mass.
+
+        :code:`prob_improve_smart_branching` has the same parameters
+        as `code:`smart_branching`.
+
+        :param branches: The branches for which to determine the dimensions to split.
+        :return: The splits to perform.
+        """
+        splits, is_invalid = self.propose_splits(branches)
+        left_bounds, right_bounds, num_splits, batch_size = self._get_branch_bounds(
+            splits
+        )
+
+        method = self._config.split_heuristic_params["auto_lirpa_method"]
+        # We already use very large batch sizes here since left_lbs contains
+        # num input dims * original batch size many elements.
+        # To balance memory requirements better, it makes sense to perform ibp/crown
+        # twice here instead of one call with an extremely large batch size.
+        left_sat_lbs, left_sat_ubs, _ = self._sat_bounds(
+            left_bounds, auto_lirpa_method=method
+        )
+        right_sat_lbs, right_sat_ubs, _ = self._sat_bounds(
+            right_bounds, auto_lirpa_method=method
+        )
+
+        # recreate (split dims, batch) shape (individual sat bounds are scalars)
+        left_sat_lbs = left_sat_lbs.reshape(num_splits, batch_size)
+        left_sat_ubs = left_sat_ubs.reshape(num_splits, batch_size)
+        right_sat_lbs = right_sat_lbs.reshape(num_splits, batch_size)
+        right_sat_ubs = right_sat_ubs.reshape(num_splits, batch_size)
+
+        # give invalid splits maximally bad sat scores so that they aren't selected.
+        left_sat_lbs.masked_fill_(is_invalid, -torch.inf)
+        right_sat_lbs.masked_fill_(is_invalid, -torch.inf)
+        left_sat_ubs.masked_fill_(is_invalid, torch.inf)
+        right_sat_ubs.masked_fill_(is_invalid, torch.inf)
+
+        # TODO:
         if self._config.split_heuristic_params["better_branch"]:
             score_sat_lbs = torch.maximum(left_sat_lbs, right_sat_lbs)
             score_sat_ubs = torch.minimum(left_sat_ubs, right_sat_ubs)

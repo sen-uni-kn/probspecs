@@ -7,12 +7,19 @@ import pytest
 from probspecs.distributions import AsInteger, UnivariateContinuousDistribution
 
 
-def test_create_standard_normal():
+def create_standard_normal():
     distribution = AsInteger.wrap(norm)
     return distribution
 
 
-def test_create_truncnorm():
+def test_create_standard_normal():
+    create_standard_normal()
+
+
+integer_standard_normal = pytest.fixture(create_standard_normal)
+
+
+def create_truncnorm():
     loc = 1.0
     scale = 2.0
     a = -1.0
@@ -22,7 +29,14 @@ def test_create_truncnorm():
     return distribution
 
 
-def test_create_lognorm():
+def test_create_truncnorm():
+    create_truncnorm()
+
+
+integer_truncnorm = pytest.fixture(create_truncnorm)
+
+
+def create_lognorm():
     distribution = UnivariateContinuousDistribution(
         lognorm(0.0, 1.0), bounds=(0.0, 5.0)
     )
@@ -30,8 +44,8 @@ def test_create_lognorm():
     return distribution
 
 
-integer_standard_normal = pytest.fixture(test_create_standard_normal)
-integer_truncnorm = pytest.fixture(test_create_truncnorm)
+def test_create_lognorm():
+    create_lognorm()
 
 
 @pytest.mark.parametrize(

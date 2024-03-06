@@ -80,9 +80,9 @@ def test_not_batched(tensor, all_):
         ((TL.TRUE, TL.UNKNOWN), TL.UNKNOWN),
         ((TL.FALSE, TL.TRUE), TL.FALSE),
         ((TL.FALSE, TL.FALSE), TL.FALSE),
-        ((TL.FALSE, TL.UNKNOWN), TL.UNKNOWN),
+        ((TL.FALSE, TL.UNKNOWN), TL.FALSE),
         ((TL.UNKNOWN, TL.TRUE), TL.UNKNOWN),
-        ((TL.UNKNOWN, TL.FALSE), TL.UNKNOWN),
+        ((TL.UNKNOWN, TL.FALSE), TL.FALSE),
         ((TL.UNKNOWN, TL.UNKNOWN), TL.UNKNOWN),
         ((TL.TRUE, TL.TRUE, TL.TRUE), TL.TRUE),
         ((TL.TRUE, TL.FALSE, TL.TRUE), TL.FALSE),
@@ -90,10 +90,10 @@ def test_not_batched(tensor, all_):
         ((TL.UNKNOWN, TL.TRUE, TL.TRUE), TL.UNKNOWN),
         ((TL.FALSE, TL.TRUE, TL.TRUE), TL.FALSE),
         ((TL.TRUE, TL.TRUE, TL.UNKNOWN), TL.UNKNOWN),
-        ((TL.FALSE, TL.UNKNOWN, TL.UNKNOWN), TL.UNKNOWN),
+        ((TL.FALSE, TL.UNKNOWN, TL.UNKNOWN), TL.FALSE),
         ((TL.TRUE,) * 100, TL.TRUE),
         ((TL.TRUE,) * 15 + (TL.FALSE,) * 2 + (TL.TRUE,) * 9, TL.FALSE),
-        ((TL.UNKNOWN,) + (TL.TRUE,) * 72 + (TL.FALSE,) * 2, TL.UNKNOWN),
+        ((TL.UNKNOWN,) + (TL.TRUE,) * 72 + (TL.FALSE,) * 2, TL.FALSE),
         ((), TL.TRUE),
     ],
 )
@@ -109,9 +109,10 @@ def test_and_batched_1(tensor, all_):
     ]
     expected_result = tensor(
         [TL.TRUE, TL.FALSE, TL.UNKNOWN]
-        + [TL.FALSE] * 2
+        + [TL.FALSE] * 3
         + [TL.UNKNOWN]
-        + [TL.UNKNOWN] * 3
+        + [TL.FALSE]
+        + [TL.UNKNOWN]
     )
     assert all_(TL.and_(*values) == expected_result)
 
@@ -124,7 +125,7 @@ def test_and_batched_2(tensor, all_):
         tensor([TL.TRUE, TL.FALSE, TL.UNKNOWN, TL.TRUE, TL.UNKNOWN, TL.TRUE]),
     ]
     expected_result = tensor(
-        [TL.TRUE, TL.FALSE, TL.UNKNOWN, TL.FALSE] + [TL.UNKNOWN] * 2
+        [TL.TRUE, TL.FALSE, TL.FALSE, TL.FALSE, TL.FALSE, TL.UNKNOWN]
     )
     assert all_(TL.and_(*values) == expected_result)
 
@@ -134,23 +135,23 @@ def test_and_batched_2(tensor, all_):
     [
         ((TL.TRUE, TL.TRUE), TL.TRUE),
         ((TL.TRUE, TL.FALSE), TL.TRUE),
-        ((TL.TRUE, TL.UNKNOWN), TL.UNKNOWN),
+        ((TL.TRUE, TL.UNKNOWN), TL.TRUE),
         ((TL.FALSE, TL.TRUE), TL.TRUE),
         ((TL.FALSE, TL.FALSE), TL.FALSE),
         ((TL.FALSE, TL.UNKNOWN), TL.UNKNOWN),
-        ((TL.UNKNOWN, TL.TRUE), TL.UNKNOWN),
+        ((TL.UNKNOWN, TL.TRUE), TL.TRUE),
         ((TL.UNKNOWN, TL.FALSE), TL.UNKNOWN),
         ((TL.UNKNOWN, TL.UNKNOWN), TL.UNKNOWN),
         ((TL.TRUE, TL.TRUE, TL.TRUE), TL.TRUE),
         ((TL.TRUE, TL.FALSE, TL.TRUE), TL.TRUE),
-        ((TL.TRUE, TL.UNKNOWN, TL.TRUE), TL.UNKNOWN),
-        ((TL.UNKNOWN, TL.TRUE, TL.TRUE), TL.UNKNOWN),
+        ((TL.TRUE, TL.UNKNOWN, TL.TRUE), TL.TRUE),
+        ((TL.UNKNOWN, TL.TRUE, TL.TRUE), TL.TRUE),
         ((TL.FALSE, TL.FALSE, TL.FALSE), TL.FALSE),
-        ((TL.TRUE, TL.TRUE, TL.UNKNOWN), TL.UNKNOWN),
+        ((TL.TRUE, TL.TRUE, TL.UNKNOWN), TL.TRUE),
         ((TL.FALSE, TL.UNKNOWN, TL.UNKNOWN), TL.UNKNOWN),
         ((TL.FALSE,) * 100, TL.FALSE),
         ((TL.TRUE,) * 15 + (TL.FALSE,) * 2 + (TL.TRUE,) * 9, TL.TRUE),
-        ((TL.UNKNOWN,) + (TL.TRUE,) * 72 + (TL.FALSE,) * 2, TL.UNKNOWN),
+        ((TL.UNKNOWN,) + (TL.TRUE,) * 72 + (TL.FALSE,) * 2, TL.TRUE),
         ((), TL.FALSE),
     ],
 )
@@ -165,7 +166,7 @@ def test_or_batched_1(tensor, all_):
         tensor([TL.TRUE, TL.FALSE, TL.UNKNOWN] * 3),
     ]
     expected_result = tensor(
-        [TL.TRUE, TL.TRUE, TL.UNKNOWN, TL.TRUE, TL.FALSE] + [TL.UNKNOWN] * 4
+        [TL.TRUE] * 4 + [TL.FALSE, TL.UNKNOWN, TL.TRUE] + [TL.UNKNOWN] * 2
     )
     assert all_(TL.or_(*values) == expected_result)
 
@@ -177,7 +178,9 @@ def test_not_batched_2(tensor, all_):
         tensor([TL.FALSE, TL.TRUE, TL.FALSE, TL.FALSE, TL.TRUE, TL.TRUE]),
         tensor([TL.FALSE, TL.FALSE, TL.UNKNOWN, TL.TRUE, TL.UNKNOWN, TL.TRUE]),
     ]
-    expected_result = tensor(
-        [TL.FALSE, TL.TRUE, TL.UNKNOWN, TL.TRUE] + [TL.UNKNOWN] * 2
-    )
+    expected_result = tensor([TL.FALSE, TL.TRUE, TL.TRUE, TL.TRUE, TL.TRUE, TL.TRUE])
     assert all_(TL.or_(*values) == expected_result)
+
+
+if __name__ == "__main__":
+    pytest.main()

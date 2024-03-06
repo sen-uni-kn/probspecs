@@ -15,7 +15,7 @@ from probspecs.distributions import (
 from probspecs import distributions
 
 
-def test_create_bayes_net_1():
+def create_bayes_net_1():
     factory = BayesianNetwork.Factory()
     source = factory.new_node("X")
     distribution = truncnorm(a=-3.0, b=3.0, loc=0.0, scale=1.0)
@@ -40,7 +40,14 @@ def test_create_bayes_net_1():
     return bayes_net
 
 
-def test_create_bayes_net_2():
+def test_create_bayes_net_1():
+    create_bayes_net_1()
+
+
+bayes_net_1 = pytest.fixture(create_bayes_net_1)
+
+
+def create_bayes_net_2():
     factory = BayesianNetwork.Factory()
     n1 = factory.new_node("n1")
     n2 = factory.new_node("n2")
@@ -64,7 +71,14 @@ def test_create_bayes_net_2():
     return bayes_net
 
 
-def test_create_bayes_net_3():
+def test_create_bayes_net_2():
+    create_bayes_net_2()
+
+
+bayes_net_2 = pytest.fixture(create_bayes_net_2)
+
+
+def create_bayes_net_3():
     factory = BayesianNetwork.Factory()
     n1 = factory.new_node("n1")
     n2 = factory.new_node("n2")
@@ -106,7 +120,14 @@ def test_create_bayes_net_3():
     return bayes_net
 
 
-def test_create_bayes_net_4():
+def test_create_bayes_net_3():
+    create_bayes_net_3()
+
+
+bayes_net_3 = pytest.fixture(create_bayes_net_3)
+
+
+def create_bayes_net_4():
     factory = BayesianNetwork.Factory()
     n1 = factory.new_node("n1")
     n2 = factory.new_node("n2")
@@ -148,7 +169,14 @@ def test_create_bayes_net_4():
     return bayes_net
 
 
-def test_create_bayes_net_5():
+def test_create_bayes_net_4():
+    create_bayes_net_4()
+
+
+bayes_net_4 = pytest.fixture(create_bayes_net_4)
+
+
+def create_bayes_net_5():
     factory = BayesianNetwork.Factory()
     n1 = factory.new_node("n1")
     n2 = factory.new_node("n2")
@@ -196,7 +224,14 @@ def test_create_bayes_net_5():
     return bayes_net
 
 
-def test_create_ten_node_bayes_net():
+def test_create_bayes_net_5():
+    create_bayes_net_5()
+
+
+bayes_net_5 = pytest.fixture(create_bayes_net_5)
+
+
+def create_ten_node_bayes_net():
     """
     Idea for this network from Google Gemini.
     """
@@ -216,6 +251,13 @@ def test_create_ten_node_bayes_net():
         node.set_conditional_probability({prev_node: ([0.0], [1.0])}, distribution)
 
     return factory.create()
+
+
+def test_create_ten_node_bayes_net():
+    create_ten_node_bayes_net()
+
+
+ten_node_bayes_net = pytest.fixture(create_ten_node_bayes_net)
 
 
 def test_create_no_duplicate_names():
@@ -421,14 +463,6 @@ def test_create_wrong_bounds_shape():
 
     with pytest.raises(ValueError):
         factory.create()
-
-
-bayes_net_1 = pytest.fixture(test_create_bayes_net_1)
-bayes_net_2 = pytest.fixture(test_create_bayes_net_2)
-bayes_net_3 = pytest.fixture(test_create_bayes_net_3)
-bayes_net_4 = pytest.fixture(test_create_bayes_net_4)
-bayes_net_5 = pytest.fixture(test_create_bayes_net_5)
-ten_node_bayes_net = pytest.fixture(test_create_ten_node_bayes_net)
 
 
 def test_sample_1(bayes_net_1):
