@@ -83,8 +83,8 @@ class TrinaryLogic(int):
         #  - all_true=True, any_false=False: 1 - 0 = 1 (TL.TRUE)
         #  - all_true=False, any_false=True: 0 - 1 = -1 (TL.FALSE)
         #  - all_true=False, any_false=False: 0 - 0 = 0 (TL.UNKNOWN)
-        # * 1 just converts bool to int
-        return all_true * 1 - any_false * 1
+        # + 0 just converts bool to int
+        return (all_true + 0) - (any_false + 0)
 
     @staticmethod
     def or_(*values: Union["TrinaryLogic", np.ndarray, torch.Tensor]):
@@ -105,7 +105,7 @@ class TrinaryLogic(int):
         #  - any_true=True, all_false=False: 1 - 0 = 1 (TL.TRUE)
         #  - any_true=False, all_false=True: 0 - 1 = -1 (TL.FALSE)
         #  - any_true=False, all_false=False: 0 - 0 = 0 (TL.UNKNOWN)
-        return any_true * 1 - all_false * 1
+        return (any_true + 0) - (all_false + 0)
 
     def __eq__(self, other):
         if isinstance(other, bool):

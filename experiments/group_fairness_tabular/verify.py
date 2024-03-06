@@ -132,8 +132,7 @@ if __name__ == "__main__":
     is_fair = p_disadvantaged / p_advantaged > 1 - args.fairness_eps
 
     verifier = Verifier(
-        worker_devices="cpu",
-        probability_bounds_config={"batch_size": 512},
+        worker_devices="cpu", probability_bounds_config={"batch_size": 512}
     )
     start_time = time()
     verification_status, probability_bounds = verifier.verify(

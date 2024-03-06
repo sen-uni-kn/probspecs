@@ -789,7 +789,7 @@ class SelectSplits:
             case "smart-branching":
                 return self.smart_branching(branches)
             case "prob-improve-smart-branching":
-                return self.prob_improve_smart_branching(branches)
+                return self.smart_branching(branches, prob_weighted=True)
             case "longest-edge":
                 return self.split_longest_edge(branches)
             case "random":
@@ -798,7 +798,7 @@ class SelectSplits:
                 raise NotImplementedError()
 
     @torch.no_grad()
-    def smart_branching(self, branches: BranchStore) -> Split:
+    def smart_branching(self, branches: BranchStore, prob_weighted=False) -> Split:
         """
         Select input dimensions to split.
         :code:`smart_branching` selects the dimension (for each batch element)
@@ -824,6 +824,7 @@ class SelectSplits:
             Neural Network Verification. J. Mach. Learn. Res. 21: 42:1-42:39 (2020)
 
         :param branches: The branches for which to determine the dimensions to split.
+        :param prob_weighted: Whether consider probabilities when selecting splits.
         :return: The splits to perform.
         """
         splits, is_invalid = self.propose_splits(branches)
@@ -854,6 +855,21 @@ class SelectSplits:
         right_sat_lbs.masked_fill_(is_invalid, -torch.inf)
         left_sat_ubs.masked_fill_(is_invalid, torch.inf)
         right_sat_ubs.masked_fill_(is_invalid, torch.inf)
+
+        if prob_weighted:
+            left_prob_mass = self._prob_mass(left_bounds)
+            right_prob_mass = self._prob_mass(right_bounds)
+            left_prob_mass = left_prob_mass.reshape(num_splits, batch_size)
+            right_prob_mass = right_prob_mass.reshape(num_splits, batch_size)
+            # We want lower bounds to be large, upper bounds to be small,
+            # and probabilities of pruned branches should be large.
+            # Shift bounds, so that we don't multiply the probability masses by zero.
+            max_lbs = max(torch.amax(left_sat_lbs), torch.amax(right_sat_lbs))
+            min_ubs = min(torch.amin(left_sat_ubs), torch.amin(right_sat_ubs))
+            left_sat_lbs = left_prob_mass * (left_sat_lbs - max_lbs - 1.0)
+            left_sat_ubs = (1 - left_prob_mass) * (left_sat_ubs + min_ubs + 1.0)
+            right_sat_lbs = right_prob_mass * (right_sat_lbs - max_lbs - 1.0)
+            right_sat_ubs = (1 - right_prob_mass) * (right_sat_ubs + min_ubs + 1.0)
 
         # Split selection strategy:
         # Select the split which makes the lower/upper bound on the branch
@@ -870,79 +886,14 @@ class SelectSplits:
         else:
             score_sat_lbs = torch.minimum(left_sat_lbs, right_sat_lbs)
             score_sat_ubs = torch.maximum(left_sat_ubs, right_sat_ubs)
+
         select_score = torch.maximum(score_sat_lbs, -score_sat_ubs)
         # At times splitting bounds that actually influence the output can lead
         # to slightly worse bounds than splitting an input that does not influence
         # the output due to floating point error.
         # To avoid this, we round the scores.
         select_score = torch.round(select_score, decimals=4)
-        # resolve ties in select_scores randomly to avoid always splitting on the
-        # early dimensions when bounds are very loose
-        permute = torch.randperm(
-            num_splits, generator=self._rng, device=self._rng.device
-        )
-        select_score = select_score[permute, :]
-        split_dims = torch.argmax(select_score, dim=0)
-        split_dims = permute[split_dims]
-        return splits.select(split_dims)
 
-    @torch.no_grad()
-    def prob_improve_smart_branching(self, branches: BranchStore) -> Split:
-        """
-        Select input dimensions to split.
-        In difference to :code:`smart_branching`, :code:`prob_improve_smart_branching`
-        weights the improvement of the estimated lower and upper satisfaction function
-        bounds by the probability mass of a branch.
-        The goal is to prioritize pruning branches with high probability mass.
-
-        :code:`prob_improve_smart_branching` has the same parameters
-        as `code:`smart_branching`.
-
-        :param branches: The branches for which to determine the dimensions to split.
-        :return: The splits to perform.
-        """
-        splits, is_invalid = self.propose_splits(branches)
-        left_bounds, right_bounds, num_splits, batch_size = self._get_branch_bounds(
-            splits
-        )
-
-        method = self._config.split_heuristic_params["auto_lirpa_method"]
-        # We already use very large batch sizes here since left_lbs contains
-        # num input dims * original batch size many elements.
-        # To balance memory requirements better, it makes sense to perform ibp/crown
-        # twice here instead of one call with an extremely large batch size.
-        left_sat_lbs, left_sat_ubs, _ = self._sat_bounds(
-            left_bounds, auto_lirpa_method=method
-        )
-        right_sat_lbs, right_sat_ubs, _ = self._sat_bounds(
-            right_bounds, auto_lirpa_method=method
-        )
-
-        # recreate (split dims, batch) shape (individual sat bounds are scalars)
-        left_sat_lbs = left_sat_lbs.reshape(num_splits, batch_size)
-        left_sat_ubs = left_sat_ubs.reshape(num_splits, batch_size)
-        right_sat_lbs = right_sat_lbs.reshape(num_splits, batch_size)
-        right_sat_ubs = right_sat_ubs.reshape(num_splits, batch_size)
-
-        # give invalid splits maximally bad sat scores so that they aren't selected.
-        left_sat_lbs.masked_fill_(is_invalid, -torch.inf)
-        right_sat_lbs.masked_fill_(is_invalid, -torch.inf)
-        left_sat_ubs.masked_fill_(is_invalid, torch.inf)
-        right_sat_ubs.masked_fill_(is_invalid, torch.inf)
-
-        # TODO:
-        if self._config.split_heuristic_params["better_branch"]:
-            score_sat_lbs = torch.maximum(left_sat_lbs, right_sat_lbs)
-            score_sat_ubs = torch.minimum(left_sat_ubs, right_sat_ubs)
-        else:
-            score_sat_lbs = torch.minimum(left_sat_lbs, right_sat_lbs)
-            score_sat_ubs = torch.maximum(left_sat_ubs, right_sat_ubs)
-        select_score = torch.maximum(score_sat_lbs, -score_sat_ubs)
-        # At times splitting bounds that actually influence the output can lead
-        # to slightly worse bounds than splitting an input that does not influence
-        # the output due to floating point error.
-        # To avoid this, we round the scores.
-        select_score = torch.round(select_score, decimals=4)
         # resolve ties in select_scores randomly to avoid always splitting on the
         # early dimensions when bounds are very loose
         permute = torch.randperm(
@@ -1040,10 +991,11 @@ class SelectSplits:
             split, is_invalid = continuous_split(dim)
             left_lbs, left_ubs = split.left_branch
             right_lbs, right_ubs = split.right_branch
+            # make sure to exclude the midpoint if it is already an integer
             left_ubs[:, dim] = torch.floor(left_ubs[:, dim])
-            right_lbs[:, dim] = torch.ceil(right_lbs[:, dim])
+            right_lbs[:, dim] = torch.floor(right_lbs[:, dim] + 1.0)
             split = Split(
-                left_branch=(lbs_flat, left_ubs), right_branch=(right_lbs, ubs_flat)
+                left_branch=(left_lbs, left_ubs), right_branch=(right_lbs, right_ubs)
             )
             return split, is_invalid
 
