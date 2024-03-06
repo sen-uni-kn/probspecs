@@ -24,7 +24,7 @@ def mtcars():
     torch.manual_seed(685723051036806)
     cont = TabularInputSpace.AttributeType.CONTINUOUS
     cat = TabularInputSpace.AttributeType.CATEGORICAL
-    ord_ = TabularInputSpace.AttributeType.ORDINAL
+    int_ = TabularInputSpace.AttributeType.INTEGER
     return TabularInputSpace(
         attributes=(
             "mpg",
@@ -33,9 +33,9 @@ def mtcars():
             "hp",
             "vs",
         ),
-        data_types={"mpg": cont, "cyl": cat, "disp": cont, "hp": ord_, "vs": cat},
+        data_types={"mpg": cont, "cyl": cat, "disp": cont, "hp": int_, "vs": cat},
         continuous_ranges={"mpg": (10.0, 34.0), "disp": (50.0, 500.0)},
-        ordinal_ranges={"hp": (52, 335)},
+        integer_ranges={"hp": (52, 335)},
         categorical_values={"cyl": ("4", "6", "8"), "vs": ("V", "straight")},
     )
 
@@ -44,10 +44,10 @@ def test_tabular_space_base(mtcars):
     in_space = mtcars
     cont = TabularInputSpace.AttributeType.CONTINUOUS
     cat = TabularInputSpace.AttributeType.CATEGORICAL
-    ord_ = TabularInputSpace.AttributeType.ORDINAL
+    int_ = TabularInputSpace.AttributeType.INTEGER
 
     assert in_space.attribute_names == ("mpg", "cyl", "disp", "hp", "vs")
-    assert in_space.attribute_types == (cont, cat, cont, ord_, cat)
+    assert in_space.attribute_types == (cont, cat, cont, int_, cat)
 
     assert in_space.attribute_name(0) == "mpg"
     assert in_space.attribute_name(4) == "vs"

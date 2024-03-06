@@ -9,26 +9,32 @@ import pytest
 
 
 @pytest.mark.parametrize(
-    "distribution,event,probability_bounds",
+    "distribution,event,expected_probability",
     [
         (
             UnivariateContinuousDistribution(norm(), (-1.0, 1.0)),
             (-1.0, 1.0),
-            (0.999, 1.001),
+            1.0,
         ),
         (
             UnivariateContinuousDistribution(norm(), (-1.0, 1.0)),
             (0.0, 1.0),
-            (0.499, 0.501),
+            0.5,
+        ),
+        (
+            UnivariateContinuousDistribution(norm(), (-1.0, 1.0)),
+            ([-1.0, 0.0], [1.0, 1.0]),
+            [1.0, 0.5],
         ),
         (
             UnivariateContinuousDistribution(lognorm(s=1.0), (0.5, 1.0)),
             (0.5, 1.0),
-            (0.999, 1.001),
+            1.0,
         ),
     ],
 )
-def test_truncate(distribution, event, probability_bounds):
-    event = torch.tensor(event[0]), torch.tensor(event[1])
-    lower, upper = probability_bounds
-    assert lower <= distribution.probability(event) <= upper
+def test_truncate(distribution, event, expected_probability):
+    dtype = distribution.dtype
+    event = torch.tensor(event[0], dtype=dtype), torch.tensor(event[1], dtype=dtype)
+    expected_probability = torch.tensor(expected_probability, dtype=dtype)
+    assert torch.allclose(distribution.probability(event), expected_probability)

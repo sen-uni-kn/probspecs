@@ -11,7 +11,7 @@ from probspecs import (
     TensorInputSpace,
     Formula,
 )
-from probspecs.bounds import probability_bounds
+from probspecs.bounds import ProbabilityBounds
 from probspecs.distributions import Uniform
 from experiments.utils import load_nnet
 
@@ -140,15 +140,13 @@ if __name__ == "__main__":
     timeout = args.timeout
     if timeout is None:
         timeout = float("inf")
+    compute_bounds = ProbabilityBounds(batch_size=128, device="cpu")
     start_time = time()
-    bounds_gen = probability_bounds(
+    bounds_gen = compute_bounds.bound(
         p_violation,
         {"network": network},
         {"x": input_space},
         {"x": input_distribution},
-        batch_size=128,
-        split_heuristic="IBP",
-        device="cpu",
     )
     best_bounds = None
     while (time() - start_time) < timeout:

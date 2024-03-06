@@ -8,6 +8,9 @@ from typing import Sequence, Protocol
 import torch
 
 
+__all__ = ["InputSpace", "TensorInputSpace", "TabularInputSpace", "CombinedInputSpace"]
+
+
 class InputSpace(Protocol):
     """
     A description of an input space of a neural network
@@ -72,17 +75,17 @@ class TabularInputSpace(InputSpace):
     class AttributeType(Enum):
         CONTINUOUS = auto()
         CATEGORICAL = auto()
-        ORDINAL = auto()
+        INTEGER = auto()
 
     def __init__(
         self,
         attributes: Sequence[str],
         data_types: dict[str, AttributeType],
         continuous_ranges: dict[str, tuple[float, float]],
-        ordinal_ranges: dict[str, tuple[int, int]],
+        integer_ranges: dict[str, tuple[int, int]],
         categorical_values: dict[str, tuple[str, ...]],
     ):
-        ranges = continuous_ranges | ordinal_ranges
+        ranges = continuous_ranges | integer_ranges
         self.__attributes = tuple(
             (
                 attr_name,
@@ -131,27 +134,27 @@ class TabularInputSpace(InputSpace):
 
     def attribute_bounds(self, index: int | str) -> tuple[float, float]:
         """
-        The input bounds of the i-th attribute (continuous or ordinal).
+        The input bounds of the i-th attribute (continuous or integer).
 
         :param index: The index of the attribute (i) or the
          name of the attribute.
-        :raises ValueError: If the i-th attribute isn't continuous or ordinal.
+        :raises ValueError: If the i-th attribute isn't continuous or integer.
         """
         if isinstance(index, str):
             index = self.__name_to_index[index]
 
         attr_name, attr_type, attr_info = self.__attributes[index]
-        if attr_type not in (self.AttributeType.CONTINUOUS, self.AttributeType.ORDINAL):
+        if attr_type not in (self.AttributeType.CONTINUOUS, self.AttributeType.INTEGER):
             raise ValueError(f"Attribute {attr_name} has no input bounds.")
         return attr_info
 
     def attribute_values(self, index: int | str) -> tuple[str | int, ...]:
         """
-        The permitted values of the i-th attribute (categorical or ordinal).
+        The permitted values of the i-th attribute (categorical or integer).
 
         :param index: The index of the attribute (i) or the
          name of the attribute.
-        :raises ValueError: If the i-th attribute isn't categorical or ordinal.
+        :raises ValueError: If the i-th attribute isn't categorical or integer.
         """
         if isinstance(index, str):
             index = self.__name_to_index[index]
@@ -159,10 +162,10 @@ class TabularInputSpace(InputSpace):
         attr_name, attr_type, attr_info = self.__attributes[index]
         if attr_type not in (
             self.AttributeType.CATEGORICAL,
-            self.AttributeType.ORDINAL,
+            self.AttributeType.INTEGER,
         ):
             raise ValueError(f"Attribute {attr_name} has no input values.")
-        if attr_type is self.AttributeType.ORDINAL:
+        if attr_type is self.AttributeType.INTEGER:
             lb, ub = attr_info
             return tuple(range(lb, ub + 1))
         else:
@@ -192,7 +195,7 @@ class TabularInputSpace(InputSpace):
         ubs = []
         for attr_name, attr_type, attr_info in self.__attributes:
             match attr_type:
-                case self.AttributeType.CONTINUOUS | self.AttributeType.ORDINAL:
+                case self.AttributeType.CONTINUOUS | self.AttributeType.INTEGER:
                     lbs.append(attr_info[0])
                     ubs.append(attr_info[1])
                 case self.AttributeType.CATEGORICAL:
@@ -224,7 +227,7 @@ class TabularInputSpace(InputSpace):
         i = 0
         for attr_name, attr_type, attr_info in self.__attributes:
             match attr_type:
-                case self.AttributeType.CONTINUOUS | self.AttributeType.ORDINAL:
+                case self.AttributeType.CONTINUOUS | self.AttributeType.INTEGER:
                     layout[attr_name] = i
                     i += 1
                 case self.AttributeType.CATEGORICAL:
@@ -262,15 +265,15 @@ class TabularInputSpace(InputSpace):
                             f"with bounds [{lb}, {ub}]: {value}"
                         )
                     encoding.append(value)
-                case self.AttributeType.ORDINAL:
+                case self.AttributeType.INTEGER:
                     if not isinstance(value, int):
                         raise ValueError(
-                            f"Invalid value for ordinal attribute {attr_name}: {value}"
+                            f"Invalid value for integer attribute {attr_name}: {value}"
                         )
                     lb, ub = attr_info
                     if not lb <= value <= ub:
                         raise ValueError(
-                            f"Invalid value for ordinal attribute {attr_name} "
+                            f"Invalid value for integer attribute {attr_name} "
                             f"with bounds [{lb}, {ub}]: {value}"
                         )
                     encoding.append(value)
@@ -307,7 +310,7 @@ class TabularInputSpace(InputSpace):
         layout = self.encoding_layout
         for attr_name, attr_type, attr_info in self.__attributes:
             match attr_type:
-                case self.AttributeType.CONTINUOUS | self.AttributeType.ORDINAL:
+                case self.AttributeType.CONTINUOUS | self.AttributeType.INTEGER:
                     value = x[layout[attr_name]]
                     lb, ub = attr_info
                     if not lb <= value <= ub:

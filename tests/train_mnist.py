@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
 
+
 if __name__ == "__main__":
     # Small net for tests
     torch.manual_seed(177878981064172)

@@ -22,12 +22,11 @@ from torch import nn
 import torch.nn.functional as F
 from scipy.stats import norm, bernoulli
 
-from probspecs import (
-    TabularInputSpace,
+from probspecs import TabularInputSpace, InputSpace
+from probspecs.distributions import (
     UnivariateContinuousDistribution,
     MultivariateIndependent,
     ProbabilityDistribution,
-    InputSpace,
     UnivariateDiscreteDistribution,
 )
 import probspecs.operations as ops
@@ -50,7 +49,7 @@ _classifier_input_space = TabularInputSpace(
     data_types={
         "age": AttrT.CONTINUOUS,
         "education_num": AttrT.CONTINUOUS,
-        "sex": AttrT.ORDINAL,
+        "sex": AttrT.INTEGER,
         "capital_gain": AttrT.CONTINUOUS,
         "capital_loss": AttrT.CONTINUOUS,
         "hours_per_week": AttrT.CONTINUOUS,
@@ -62,7 +61,7 @@ _classifier_input_space = TabularInputSpace(
         "capital_loss": (_input_lbs[4], _input_ubs[4]),
         "hours_per_week": (_input_lbs[5], _input_ubs[5]),
     },
-    ordinal_ranges={"sex": (0, 1)},
+    integer_ranges={"sex": (0, 1)},
     categorical_values={},
 )
 
@@ -125,7 +124,7 @@ _base_input_space = TabularInputSpace(
     data_types={
         "age": AttrT.CONTINUOUS,
         "education_num": AttrT.CONTINUOUS,
-        "sex": AttrT.ORDINAL,
+        "sex": AttrT.INTEGER,
         "capital_gain": AttrT.CONTINUOUS,
         "capital_loss": AttrT.CONTINUOUS,
         "hours_per_week": AttrT.CONTINUOUS,
@@ -137,7 +136,7 @@ _base_input_space = TabularInputSpace(
         "capital_loss": (-10.0, 10.0),
         "hours_per_week": (-10.0, 10.0),
     },
-    ordinal_ranges={"sex": (0, 1)},
+    integer_ranges={"sex": (0, 1)},
     categorical_values={},
 )
 

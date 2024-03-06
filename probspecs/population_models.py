@@ -7,6 +7,15 @@ from torch import nn
 import torch.nn.functional as F
 
 
+__all__ = [
+    "FactorAnalysisModel",
+    "EncodeOneHot",
+    "Normalize",
+    "Denormalize",
+    "Identity",
+]
+
+
 class FactorAnalysisModel(nn.Linear):
     """
     A population model for factor analysis.

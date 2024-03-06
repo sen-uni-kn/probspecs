@@ -32,8 +32,11 @@ __all__ = [
     "min_expr",
     "max_expr",
     "compose",
+    "and_expr",
+    "or_expr",
     "BOOL_TERM",
     "NUMERIC_TERM",
+    "TERM_TYPES",
 ]
 
 
@@ -252,6 +255,26 @@ class Formula:
         return f" {self.op} ".join(
             [convert_operand(operand) for operand in self.operands]
         )
+
+
+def and_expr(*args: BOOL_TERM) -> Formula:
+    """
+    Creates the expression :code:`arg1 ∧ arg2 ∧ ... ∧ argN)`.
+
+    :param args: The arguments to conjoin.
+    :return: An :class:`Formula`.
+    """
+    return Formula(Formula.Operator.AND, args)
+
+
+def or_expr(*args: BOOL_TERM) -> Formula:
+    """
+    Creates the expression :code:`arg1 ∨ arg2 ∨ ... ∨ argN)`.
+
+    :param args: The arguments to disjoint.
+    :return: An :class:`Formula`.
+    """
+    return Formula(Formula.Operator.OR, args)
 
 
 @dataclass(frozen=True)

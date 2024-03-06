@@ -5,7 +5,7 @@ from typing import Literal
 import torch
 from torch import nn
 
-from probspecs.bounds.network_bounds import network_bounds
+from probspecs.bounds.network_bounds import NetworkBounds
 
 import pytest
 
@@ -18,7 +18,7 @@ import pytest
         pytest.param(
             "cuda",
             marks=pytest.mark.xfail(
-                condition=torch.cuda.is_available(), reason="CUDA unavailable"
+                condition=not torch.cuda.is_available(), reason="CUDA unavailable"
             ),
         ),
     ],
@@ -31,14 +31,14 @@ def test_refine_bounds(split_heuristic: Literal["longest-edge", "IBP"], device: 
     in_ub = torch.ones(10)
 
     test_inputs = torch.rand((100, 10))
-    test_outputs = net(test_inputs)
+    test_outputs = net(test_inputs).to(device)
 
-    bounds_gen = network_bounds(
+    compute_bounds = NetworkBounds(
+        batch_size=256, split_heuristic=split_heuristic, device=device
+    )
+    bounds_gen = compute_bounds.bound(
         net,
         (in_lb, in_ub),
-        batch_size=256,
-        split_heuristic=split_heuristic,
-        device=device,
     )
     best_lb = -torch.inf
     best_ub = torch.inf

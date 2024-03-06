@@ -57,5 +57,6 @@ def test_probability_uniform(support, event, expected_probability):
     event = tuple(map(torch.tensor, event))
     distribution = Uniform(support)
     assert torch.isclose(
-        distribution.probability(event), torch.tensor(expected_probability)
+        distribution.probability(event),
+        torch.tensor(expected_probability, dtype=distribution.dtype),
     )

@@ -1,13 +1,12 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
 import itertools
-from collections import namedtuple, OrderedDict
+from collections import OrderedDict
 from dataclasses import dataclass
 import random
 from math import prod
-from typing import Sequence, Union
+from typing import Sequence, Union, NamedTuple
 
-from frozendict import frozendict
 import torch
 import rust_enum
 
@@ -16,39 +15,83 @@ from ..input_space import CombinedInputSpace, TensorInputSpace
 from ..utils.tensor_utils import to_tensor, TENSOR_LIKE
 
 
+__all__ = ["BayesianNetwork"]
+
+
+class _Event:
+    def __init__(self, lb: torch.Tensor, ub: torch.Tensor):
+        self.lb = torch.atleast_1d(lb)
+        self.ub = torch.atleast_1d(ub)
+
+    def __len__(self):
+        return 2
+
+    def __getitem__(self, item):
+        if item == 0:
+            return self.lb
+        elif item == 1:
+            return self.ub
+        else:
+            raise IndexError
+
+    def __iter__(self):
+        return iter((self.lb, self.ub))
+
+    def __eq__(self, other):
+        if self.lb.shape != other.lb.shape:
+            return False
+        return torch.all((self.lb == other.lb) & (self.ub == other.ub))
+
+    def __hash__(self):
+        return hash(
+            (
+                tuple(self.lb.detach().tolist()),
+                tuple(self.ub.detach().tolist()),
+            )
+        )
+
+
+class _ConditionalProbabilityTableEntry(NamedTuple):
+    """
+    An entry of a conditional probability table.
+
+    - condition is a mapping from parent nodes to an event (lower + upper bounds)
+    - distribution is the ProbabilityDistribution to use when condition matches
+      the values of all parents
+    """
+
+    condition: dict["_Node", _Event]
+    distribution: ProbabilityDistribution
+
+
+@dataclass(frozen=True, eq=False)
+class _Node:
+    """
+    A node of a :code:`BayesianNetwork`.
+    """
+
+    name: str
+    parents: tuple["_Node", ...]
+    conditional_probability_table: tuple[_ConditionalProbabilityTableEntry, ...]
+
+    def __eq__(self, other):
+        return self is other
+
+    def __hash__(self):
+        return super().__hash__()
+
+    def __repr__(self):
+        parent_names = ", ".join([parent.name for parent in self.parents])
+        return f"_Node(name={self.name}, parents={{{parent_names}}}, id={id(self)})"
+
+
 class BayesianNetwork(ProbabilityDistribution):
     """
     A Bayesian network.
     """
 
-    # condition is a mapping from parent nodes to an event (lower + upper bounds)
-    # distribution is the ProbabilityDistribution to use when condition matches
-    # the values of all parents
-    _ConditionalProbabilityTableEntry = namedtuple(
-        "_ConditionalProbabilityTableEntry", ("condition", "distribution")
-    )
-
-    @dataclass(frozen=True, eq=False)
-    class _Node:
-        """
-        A node of a :code:`BayesianNetwork`.
-        """
-
-        name: str
-        parents: tuple["BayesianNetwork._Node", ...]
-        conditional_probability_table: tuple[
-            "BayesianNetwork._ConditionalProbabilityTableEntry", ...
-        ]
-
-        def __eq__(self, other):
-            return self is other
-
-        def __hash__(self):
-            return super().__hash__()
-
-    def __init__(self, nodes: Sequence["BayesianNetwork._Node"]):
+    def __init__(self, nodes: Sequence[_Node], dtype: torch.dtype = torch.double):
         """Creates a new :code:`BayesianNetwork`"""
-        nodes = tuple(nodes)
         if len(nodes) == 0:
             raise ValueError("A BayesianNetwork needs to have at least one node.")
 
@@ -59,26 +102,23 @@ class BayesianNetwork(ProbabilityDistribution):
             node_names.add(node.name)
 
         # order the nodes from sources to sinks
-        processed_nodes = set()
-        ordered_nodes = []
-        while len(processed_nodes) < len(nodes):
-            for node in nodes:
-                if node in processed_nodes:
-                    continue
-                if processed_nodes.issuperset(node.parents):
-                    processed_nodes.add(node)
-                    ordered_nodes.append(node)
-        self.__nodes = tuple(ordered_nodes)
+        nodes_ordered = self._order_nodes(nodes)
+        nodes, nodes_ordered = self._unify_conditions(nodes, nodes_ordered, dtype)
+        self.__nodes = nodes_ordered
         self.__original_order = nodes
+
+        # Compute the predecessors of all nodes.
+        # The predecessors are used for computing probabilities.
+        self.__predecessors = self._build_predecessors(self.__nodes)
 
         self.__node_event_shapes = {
             node: node.conditional_probability_table[0].distribution.event_shape
-            for node in nodes
+            for node in self.__nodes
         }
 
         # Check that the bounds in all conditional probability tables match
         # the parent node event shapes
-        for node in nodes:
+        for node in self.__nodes:
             for condition, _ in node.conditional_probability_table:
                 for parent, (lower, upper) in condition.items():
                     try:
@@ -91,6 +131,7 @@ class BayesianNetwork(ProbabilityDistribution):
                             f"event shape of {parent.name}."
                         ) from e
 
+        # For matching event elements to nodes
         self.__output_space = CombinedInputSpace(
             {
                 node.name: TensorInputSpace(
@@ -100,6 +141,85 @@ class BayesianNetwork(ProbabilityDistribution):
                 for node in self.__original_order
             }
         )
+        self.__dtype = dtype
+
+    @staticmethod
+    def _unify_conditions(
+        nodes: Sequence[_Node], nodes_ordered: Sequence[_Node], dtype: torch.dtype
+    ) -> tuple[tuple[_Node, ...], tuple[_Node, ...]]:
+        """
+        Replace equal events in conditional probability tables by
+        identical _Event objects.
+        This improves caching speed in :code:`probability`.
+
+        Also converts all conditions to :code:`self.__dtype`.
+
+        :param nodes: The nodes to process
+        :param nodes_ordered: The same nodes, but ordered from sources to sinks
+        :return: The new nodes, ordered as `nodes` and the new nodes, ordered
+         as `nodes_ordered`.
+        """
+        events = {}  # stores the canonical event instance
+        converted: dict[_Node, _Node] = {}  # old nodes to new nodes
+
+        def lookup_event(event: _Event) -> _Event:
+            if event not in events:
+                lb, ub = event
+                lb, ub = lb.to(dtype), ub.to(dtype)
+                events[event] = _Event(lb, ub)
+            return events[event]
+
+        def convert_table_entry(
+            entry: _ConditionalProbabilityTableEntry,
+        ) -> _ConditionalProbabilityTableEntry:
+            condition, distribution = entry
+            condition = {
+                converted[parent]: lookup_event(event)
+                for parent, event in condition.items()
+            }
+            return _ConditionalProbabilityTableEntry(condition, distribution)
+
+        # walk from sources to sinks so that parent nodes were already processed
+        for node in nodes_ordered:
+            table = tuple(map(convert_table_entry, node.conditional_probability_table))
+            parents = tuple(converted[node] for node in node.parents)
+            new_node = _Node(node.name, parents, table)
+            converted[node] = new_node
+
+        new_nodes_ordered = tuple(converted.values())  # dict remembers insertion order
+        new_nodes = tuple(converted[node] for node in nodes)
+        return new_nodes, new_nodes_ordered
+
+    @staticmethod
+    def _order_nodes(nodes: Sequence[_Node]) -> tuple[_Node, ...]:
+        """Orders nodes from sources to sinks"""
+        processed_nodes = set()
+        ordered_nodes = []
+        while len(processed_nodes) < len(nodes):
+            for node in nodes:
+                if node in processed_nodes:
+                    continue
+                if processed_nodes.issuperset(node.parents):
+                    processed_nodes.add(node)
+                    ordered_nodes.append(node)
+        return tuple(ordered_nodes)
+
+    @staticmethod
+    def _build_predecessors(
+        ordered_nodes: tuple[_Node, ...],
+    ) -> dict[_Node, set[_Node]]:
+        """
+        Compute the predecessors of all nodes.
+        :param ordered_nodes: Nodes, ordered from sources to sinks.
+        """
+        predecessors = {}
+        for node in ordered_nodes:
+            node_predecessors = set()
+            for parent in node.parents:
+                node_predecessors.add(parent)
+                node_predecessors.update(predecessors[parent])
+            predecessors[node] = node_predecessors
+        return predecessors
 
     def probability(self, event: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
         # Example computation for the following graph:
@@ -139,165 +259,152 @@ class BayesianNetwork(ProbabilityDistribution):
         # For example,
         # P(E ∈ [e1, e2] | A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2])
         #   | Law of total probability
-        #   | [ai1, ai2] x [bi1, bi2] x [ci1, ci2] is the i-th condition
-        #   | of E's conditional probability table
-        # = Σ_i P(E ∈ [e1, e2] | A ∈ [a1, a2] ∩ [ai1, ai2] ∧ B ∈ [b1, b2] ∩ [bi1, bi2]
-        #                        ∧ C ∈ [c1, c2] ∩ [ci1, ci2])
-        #       * P(A ∈ [ai1, ai2] ∧ B ∈ [bi1, bi2] ∧ C ∈ [ci1, ci2]
-        #           | A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2])
+        #   | condition_i is the i-th condition of E's conditional probability table
+        # = Σ_i P(E ∈ [e1, e2] | condition_i ∧ A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2])
+        #       * P(condition_i | A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2])
         #   | Definition of conditional probability
-        # = Σ_i P(E ∈ [e1, e2] | A ∈ [a1, a2] ∩ [ai1, ai2] ∧ B ∈ [b1, b2] ∩ [bi1, bi2]
-        #                        ∧ C ∈ [c1, c2] ∩ [ci1, ci2])
-        #       * P(A ∈ [ai1, ai2] ∧ B ∈ [bi1, bi2] ∧ C ∈ [ci1, ci2]
-        #           ∧ A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2])
+        # = Σ_i P(E ∈ [e1, e2] | condition_i ∧ A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2])
+        #       * P(condition_i ∧ A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2])
         #       / P(A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2])
-        # = Σ_i P(E ∈ [e1, e2] | A ∈ [a1, a2] ∩ [ai1, ai2] ∧ B ∈ [b1, b2] ∩ [bi1, bi2]
-        #                        ∧ C ∈ [c1, c2] ∩ [ci1, ci2])
-        #       * P(A ∈ [a1, a2] ∩ [ai1, ai2] ∧ B ∈ [b1, b2] ∩ [bi1, bi2]
-        #           ∧ C ∈ [c1, c2] ∩ [ci1, ci2])
+        # A problem with the above expression is that we don't know
+        # P(E ∈ [e1, e2] | condition_i ∧ A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2]).
+        # However, we know P(E ∈ [e1, e2] | condition_i) since it an entry in
+        # E's conditional probability table.
+        # We can think of selecting a row in E's conditional probability table as a
+        # separate deterministic node in the Bayesian network.
+        # This node is then the only parent node of E, with E's parents being the parents
+        # of the new deterministic node.
+        # With this,
+        # P(E ∈ [e1, e2] | condition_i ∧ A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2])
+        # = P(E ∈ [e1, e2] | condition_i)
+        # due to conditional independence of E given E's (virtual) single parent node.
+        # Therefore,
+        # P(E ∈ [e1, e2] | A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2])
+        # = Σ_i P(E ∈ [e1, e2] | condition_i)
+        #       * P(condition_i ∧ A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2])
         #       / P(A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2])
-        # Note that because of the second factor of the multiplication, a term in the
-        # sum is zero if [a1, a2] ∩ [ai1, ai2], [b1, b2] ∩ [bi1, bi2], or
-        # [c1, c2] ∩ [ci1, ci2] is empty (condition doesn't match),
-        # even though the conditional probability in the first factor is undefined
-        # in this case.
 
-        @dataclass(frozen=True, eq=False)
+        @dataclass(frozen=True)
         class AtomicEvent:
             """An event of one node."""
 
-            node: "BayesianNetwork._Node"
+            node: _Node
             lower: torch.Tensor
             upper: torch.Tensor
+            # Identifiers for the conditions that were conjoined with the root event
+            # (the argument `event` to `probability`) to obtain this AtomicEvent.
+            # Used for hashing, as (together with node) it uniquely identifies a
+            # conjunction during the course of the algorithm.
+            applied_conditions: frozenset[int] = frozenset()
 
-            def as_hashable(
-                self,
-            ) -> tuple["BayesianNetwork._Node", tuple[float, ...], tuple[float, ...]]:
+            def __eq__(self, other):
                 return (
-                    self.node,
-                    tuple(self.lower.flatten().tolist()),
-                    tuple(self.upper.flatten().tolist()),
+                    self.node == other.node
+                    and self.applied_conditions == other.applied_conditions
                 )
 
-        # Term like P(A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2]) appear several times
-        # in the overall probability.
-        # To avoid computing them multiple times, we cache them.
-        # We also cache values like P(A ∈ [a1, a2] ∩ [ai1, ai2]
-        # ∧ B ∈ [b1, b2] ∩ [bi1, bi2] ∧ C ∈ [c1, c2] ∩ [ci1, ci2]) in case conditions
-        # appear in multiple conditional probability tables.
-        #
-        # We represent conjuncts as tuples that are always ordered according to
-        # self.__nodes
-        conjuncts_cache: dict[
-            tuple[
-                tuple[BayesianNetwork._Node, tuple[float, ...], tuple[float, ...]], ...
-            ],
-            torch.Tensor,
-        ] = {}
+            def __hash__(self):
+                return hash((self.node, self.applied_conditions))
 
-        def probability_of_conjunction(
-            event_: tuple[AtomicEvent, ...],
-        ) -> torch.Tensor | float:
-            if len(event_) == 0:
-                return 1.0
-
-            event_hashable = tuple(ae.as_hashable() for ae in event_)
-            if event_hashable not in conjuncts_cache:
-                # apply the chain rule for the last node in event_
-                # (event_ is always ordered from sources to sinks)
-                conditional = probability_conditioned_on_parents(event_)
-                parents = probability_of_conjunction(event_[:-1])
-                conjuncts_cache[event_hashable] = conditional * parents
-            return conjuncts_cache[event_hashable]
-
-        def probability_conditioned_on_parents(
-            event_: tuple[AtomicEvent, ...],
-        ) -> torch.Tensor | float:
-            """Compute P(event_[-1] | event[:-1])."""
-            if len(event_) == 0:
-                return 1.0
-
-            subject = event_[-1]
-            others = event_[:-1]
-            node = subject.node
-            # Eliminate conditionally independent nodes from event_.
-            # Since we walk from sinks to sources (see below),
-            # no descendants of node can be contained in event_.
-            predecessors_stack = list(node.parents)
-            predecessors = set()
-            while len(predecessors_stack) > 0:
-                predecessor = predecessors_stack.pop()
-                predecessors_stack.extend(predecessor.parents)
-                predecessors.add(predecessor)
-            parent_event = tuple(ae for ae in others if ae.node in predecessors)
-
-            node_prob = torch.zeros(1)
-            for condition, distribution in node.conditional_probability_table:
-                # Check if this table entry applies.
-                # It applies if the table entry condition intersects with
-                # the parent event.
-                # Here we instead check if condition and parent_event are disjoint
-                # (do not intersect).
-                # This is the case if the bounds of condition and parent_event
-                # are disjoint for any variable in any dimension.
-                if any(
-                    torch.any(
-                        (ae.lower > condition[ae.node][1])  # lower > upper
-                        | (ae.upper < condition[ae.node][0])  # upper < lower
-                    )
-                    for ae in parent_event
-                    if ae.node in condition
-                ):
-                    # This term of the sum is zero
-                    continue
-
-                # First term: P(subject | condition)
-                # Actually: P(subject | condition ∧ parent_event),
-                # but since we established that condition and parent_event intersect,
-                # these two probabilities are the same, since we interpret condition
-                # as a discrete indicator variable.
-                cond_prob = distribution.probability((subject.lower, subject.upper))
-                # intersection of condition and parent_event
-                intersection = tuple(
-                    AtomicEvent(
-                        p_ae.node,
-                        torch.maximum(p_ae.lower, condition[p_ae.node][0]),
-                        torch.minimum(p_ae.upper, condition[p_ae.node][1]),
-                    )
-                    if p_ae.node in condition
-                    else p_ae
-                    for p_ae in parent_event
+            def intersect(self, condition: dict[_Node, _Event]) -> "AtomicEvent":
+                if self.node not in condition:
+                    return self
+                node_condition = condition[self.node]
+                now_applied = frozenset([id(node_condition), *self.applied_conditions])
+                condition_lower, condition_upper = node_condition
+                new_lower = torch.maximum(self.lower, condition_lower)
+                new_upper = torch.minimum(self.upper, condition_upper)
+                # the above may make new_lower > new_upper, but we can't fix this
+                # here, because we would have to differentiate discrete and continuous
+                # event spaces.
+                # ProbabilityDistributions have to handle these cases properly.
+                return AtomicEvent(
+                    self.node, new_lower, new_upper, applied_conditions=now_applied
                 )
-                intersection_prob = probability_of_conjunction(intersection)
-                # all terms are divided by P(parent_event), so we factor that out
-                node_prob += cond_prob * intersection_prob
-
-            parents_prob = probability_of_conjunction(parent_event)
-            return node_prob / parents_prob
 
         lower, upper = event
+        lower, upper = lower.to(self.dtype), upper.to(self.dtype)
         lower = self.__output_space.decompose(torch.atleast_2d(lower))
         upper = self.__output_space.decompose(torch.atleast_2d(upper))
         event = tuple(
             AtomicEvent(
                 node,
-                lower[node.name].reshape(self.__node_event_shapes[node]),
-                upper[node.name].reshape(self.__node_event_shapes[node]),
+                lower[node.name].reshape(-1, *self.__node_event_shapes[node]),
+                upper[node.name].reshape(-1, *self.__node_event_shapes[node]),
             )
             for node in self.__nodes
         )
 
-        # walk from sinks to sources
-        prob = probability_conditioned_on_parents(event)
-        event = event[:-1]
-        while len(event) > 0:
-            p = probability_conditioned_on_parents(event)
-            # if p is zero for some node, previous conditional probabilities
-            # are nan, due to division by zero.
-            # However, we want to treat the overall product as 0.0 instead of nan.
-            prob = torch.where(p != 0, prob * p, 0.0)
-            event = event[:-1]
-        return prob
+        # Term like P(A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2]) appear several times
+        # in the overall probability.
+        # To avoid computing them multiple times, we cache them.
+        # We represent conjuncts as tuples of atomic events.
+        conjuncts_cache: dict[
+            tuple[AtomicEvent, ...],
+            torch.Tensor,
+        ] = {}
+
+        def probability_of_conjunction(
+            event_: tuple[AtomicEvent, ...],
+        ) -> torch.Tensor:
+            if len(event_) == 0:
+                return torch.ones((), dtype=self.dtype)
+
+            def compute_intersection_prob():
+                # Apply the chain rule for the last node in event_
+                # (event_ is always ordered from sources to sinks)
+                conditional = probability_conditioned_on_parents(event_)
+                parents = probability_of_conjunction(event_[:-1])
+                # If we apply the chain rule to compute the probability of an
+                # empty intersection, the probability condition on parents can be
+                # undefined, if the intersection of the parent events is zero.
+                # Practically, it is nan in this case.
+                # However, the probability of the intersection is not undefined but zero.
+                # We work around this case by setting the probability of the intersection
+                # to zero if the probability of the parent's intersection is zero.
+                zero = torch.zeros((), dtype=self.dtype)
+                return torch.where(parents.isclose(zero), zero, conditional * parents)
+
+            if event_ not in conjuncts_cache:
+                conjuncts_cache[event_] = compute_intersection_prob()
+            return conjuncts_cache[event_]
+
+        def probability_conditioned_on_parents(
+            event_: tuple[AtomicEvent, ...],
+        ) -> torch.Tensor:
+            """Compute P(event_[-1] | event[:-1])."""
+            if len(event_) == 0:
+                return torch.ones((), dtype=self.dtype)
+
+            subject = event_[-1]
+            others = event_[:-1]
+            node = subject.node
+
+            predecessors = self.__predecessors[node]
+            parent_event = tuple(ae for ae in others if ae.node in predecessors)
+
+            parents_prob = probability_of_conjunction(parent_event)
+            node_prob = torch.zeros(subject.lower.size(0), dtype=self.dtype)
+            for condition, distribution in node.conditional_probability_table:
+                # First term: P(subject | condition)
+                subject_given_condition = distribution.probability(
+                    (subject.lower, subject.upper)
+                )
+                subject_given_condition = subject_given_condition.to(self.dtype)
+                # Second term: P(condition ∧ parent_event)
+                # intersection of condition and parent_event
+                intersection = tuple(p_ae.intersect(condition) for p_ae in parent_event)
+                intersection_prob = probability_of_conjunction(intersection)
+                # Computing the probability of an empty intersection using the
+                # chain rule may lead to undefined terms (if we condition
+                # on an empty set).
+                node_prob += subject_given_condition * intersection_prob
+                # All terms in the sum are divided by P(parent_event),
+                # so we factor that out
+
+            return node_prob / parents_prob
+
+        return probability_of_conjunction(event)
 
     def sample(self, num_samples: int, seed=None) -> torch.Tensor:
         cache = {}
@@ -309,14 +416,11 @@ class BayesianNetwork(ProbabilityDistribution):
             # when we process the node.
             # To support batch processing, we generate samples from all possible
             # distributions and select one depending on the batch element.
-            sample = torch.full(
-                (num_samples, prod(self.__node_event_shapes[node])),
-                fill_value=torch.nan,
-            )
+            sample = torch.empty((num_samples, prod(self.__node_event_shapes[node])))
             for condition, distribution in node.conditional_probability_table:
-                seed = seed_rng.randint(0, 2**32 - 1)
+                seed = seed_rng.randint(0, 2**64 - 1)
                 sample_j = distribution.sample(num_samples, seed)
-                sample_j = sample_j.reshape((num_samples, -1))
+                sample_j = sample_j.reshape((num_samples, -1)).to(self.dtype)
                 select = torch.full((num_samples,), fill_value=True)
                 for parent in node.parents:
                     lower, upper = condition[parent]
@@ -331,6 +435,14 @@ class BayesianNetwork(ProbabilityDistribution):
     @property
     def event_shape(self) -> torch.Size:
         return torch.Size(self.__output_space.input_shape)
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return self.__dtype
+
+    @dtype.setter
+    def dtype(self, dtype: torch.dtype):
+        self.__dtype = dtype
 
     @property
     def output_space(self) -> CombinedInputSpace:
@@ -388,22 +500,70 @@ class BayesianNetwork(ProbabilityDistribution):
             def name(self) -> str:
                 return self.__name
 
-            def add_parent(self, node: Union[str, "BayesianNetwork.Factory.Node"]):
-                self._check_cond_prob_table_not_created("node parents")
+            def add_parent(
+                self,
+                node: Union[str, "BayesianNetwork.Factory.Node"],
+                reset_conditional_probabilities=False,
+            ):
+                """
+                Add a parent node to this node.
+
+                By default, the parents of a node can not be modified once
+                the conditional probability table was created.
+                Use :code:`reset_conditional_probabilities=True` to clear
+                a previously set conditional probability table
+                when modifying the parent nodes.
+                """
+                if reset_conditional_probabilities:
+                    self.__conditional_probability_table = None
+                else:
+                    self._check_cond_prob_table_not_created("node parents")
 
                 if not isinstance(node, str):
                     node = node.name
                 self.__parents.append(node)
 
-            def remove_parent(self, node: Union[str, "BayesianNetwork.Factory.Node"]):
-                self._check_cond_prob_table_not_created("node parents")
+            def remove_parent(
+                self,
+                node: Union[str, "BayesianNetwork.Factory.Node"],
+                reset_conditional_probabilities=False,
+            ):
+                """
+                Remove a parent node of this node.
+
+                By default, the parents of a node can not be modified once
+                the conditional probability table was created.
+                Use :code:`reset_conditional_probabilities=True` to clear
+                a previously set conditional probability table
+                when modifying the parent nodes.
+                """
+                if reset_conditional_probabilities:
+                    self.__conditional_probability_table = None
+                else:
+                    self._check_cond_prob_table_not_created("node parents")
 
                 if not isinstance(node, str):
                     node = node.name
                 self.__parents.remove(node)
 
-            def set_parents(self, *nodes: Union[str, "BayesianNetwork.Factory.Node"]):
-                self._check_cond_prob_table_not_created("node parents")
+            def set_parents(
+                self,
+                *nodes: Union[str, "BayesianNetwork.Factory.Node"],
+                reset_conditional_probabilities=False,
+            ):
+                """
+                Set the parent nodes of this node.
+
+                By default, the parents of a node can not be modified once
+                the conditional probability table was created.
+                Use :code:`reset_conditional_probabilities=True` to clear
+                a previously set conditional probability table
+                when modifying the parent nodes.
+                """
+                if reset_conditional_probabilities:
+                    self.__conditional_probability_table = None
+                else:
+                    self._check_cond_prob_table_not_created("node parents")
 
                 self.__parents = []
                 for node in nodes:
@@ -413,20 +573,46 @@ class BayesianNetwork(ProbabilityDistribution):
             def parents(self) -> tuple[str, ...]:
                 return tuple(self.__parents)
 
-            def unbounded_event_space(self):
+            def unbounded_event_space(
+                self,
+                reset_conditional_probabilities=False,
+            ):
                 """
                 Sets this node to have an unbounded event space.
+
+                By default, the event space of a node can not be modified once
+                the conditional probability table was created.
+                Use :code:`reset_conditional_probabilities=True` to clear
+                a previously set conditional probability table when
+                modifying the event space.
                 """
-                self._check_cond_prob_table_not_created("event space")
+                if reset_conditional_probabilities:
+                    self.__conditional_probability_table = None
+                else:
+                    self._check_cond_prob_table_not_created("event space")
                 self.__event_space = BayesianNetwork.Factory.EventSpace.Unbounded()
 
-            def continuous_event_space(self, lower: TENSOR_LIKE, upper: TENSOR_LIKE):
+            def continuous_event_space(
+                self,
+                lower: TENSOR_LIKE,
+                upper: TENSOR_LIKE,
+                reset_conditional_probabilities=False,
+            ):
                 """
                 Sets this node to have a continuous event space in the form
                 of a hyper-rectangle with minimal elements :code:`lower`
                 and maximal elements :code:`upper`.
+
+                By default, the event space of a node can not be modified once
+                the conditional probability table was created.
+                Use :code:`reset_conditional_probabilities=True` to clear
+                a previously set conditional probability table when
+                modifying the event space.
                 """
-                self._check_cond_prob_table_not_created("event space")
+                if reset_conditional_probabilities:
+                    self.__conditional_probability_table = None
+                else:
+                    self._check_cond_prob_table_not_created("event space")
 
                 lower = to_tensor(lower)
                 upper = to_tensor(upper)
@@ -434,15 +620,42 @@ class BayesianNetwork(ProbabilityDistribution):
                     lower, upper
                 )
 
-            def discrete_event_space(self, *values: TENSOR_LIKE):
+            def discrete_event_space(
+                self,
+                *values: TENSOR_LIKE,
+                reset_conditional_probabilities=False,
+            ):
                 """
                 Sets this node to have a discrete event space with the
                 given values as options.
+
+                By default, the event space of a node can not be modified once
+                the conditional probability table was created.
+                Use :code:`reset_conditional_probabilities=True` to clear
+                a previously set conditional probability table when
+                modifying the event space.
                 """
-                self._check_cond_prob_table_not_created("event space")
+                if reset_conditional_probabilities:
+                    self.__conditional_probability_table = None
+                else:
+                    self._check_cond_prob_table_not_created("event space")
 
                 values = tuple(to_tensor(val) for val in values)
                 self.__event_space = BayesianNetwork.Factory.EventSpace.Discrete(values)
+
+            def one_hot_event_space(self, num_values: int):
+                """
+                Sets this node to have a discrete event space with
+                :code:`num_values` one-hot encoded vectors.
+
+                Concretely, when :code:`num_values=4` the event space consists of
+                :code:`[1.0, 0.0, 0.0, 0.0] [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]`.
+
+                :param num_values: The number of values of the one-hot encoded
+                 variable.
+                """
+                self.discrete_event_space(*torch.eye(num_values).tolist())
 
             @property
             def event_space(self) -> "BayesianNetwork.Factory.EventSpace":
@@ -468,7 +681,11 @@ class BayesianNetwork(ProbabilityDistribution):
                 in :code:`condition`.
 
                 Once a conditional probability was set, the parents of a node
-                can not be changed.
+                can not be changed without resetting the conditional probability
+                table.
+
+                All conditions in the conditional probability table need to be
+                disjoint.
 
                 :param condition: A mapping from parent node (names) to events.
                  Events can either be single values for discrete event spaces,
@@ -477,9 +694,7 @@ class BayesianNetwork(ProbabilityDistribution):
                  event (a set) in the event space of the parent node.
                  If the values produced by the parent nodes all lie in their respective
                  condition events, the value of this node is determined
-                 by :code:`distribution`
-                 The conditions need to be disjoint from all previously set conditions
-                 in a conditional probability.
+                 by :code:`distribution`.
                 :param distribution: The probability distribution that determines the
                  value of this node when :code:`condition` matches.
                 """
@@ -494,6 +709,7 @@ class BayesianNetwork(ProbabilityDistribution):
                     for node, event in condition.items()
                 }
 
+                # convert events to tensors and convert single value events to bounds
                 for node, event in condition.items():
                     if isinstance(event, tuple):
                         lower, upper = event
@@ -503,53 +719,25 @@ class BayesianNetwork(ProbabilityDistribution):
                         lower = upper = to_tensor(event)
                     condition[node] = (lower, upper)
 
-                # check disjointness with other table entries
                 if self.__conditional_probability_table is not None:
-                    for other_condition, _ in self.__conditional_probability_table:
-                        any_disjoint = False
-                        for parent, event in condition.items():
-                            if parent in other_condition:
-                                lower, upper = event
-                                other_lower, other_upper = other_condition[parent]
-                                if torch.any(
-                                    (lower >= other_upper) | (upper <= other_lower)
-                                ):
-                                    any_disjoint = True
-                                    break
-                        if not any_disjoint:
-                            raise ValueError(
-                                f"Condition {condition} is not disjoint from previously "
-                                f"registered condition {other_condition}."
-                            )
-
-                        all_equal = True
-                        for parent, event in condition.items():
-                            if parent in other_condition:
-                                lower, upper = event
-                                other_lower, other_upper = other_condition[parent]
-                                if torch.any(
-                                    (lower != other_upper) | (upper != other_lower)
-                                ):
-                                    all_equal = False
-                                    break
-                        if all_equal:
-                            raise ValueError(
-                                f"Condition {condition} is identical to previously "
-                                f"registered condition {other_condition}."
-                            )
-
-                if self.__conditional_probability_table is not None:
-                    for _, other_distribution in self.__conditional_probability_table:
-                        if other_distribution.event_shape != distribution.event_shape:
-                            raise ValueError(
-                                f"Distribution {distribution} has a different event shape "
-                                f"than previously supplied distribution "
-                                f"{other_distribution}."
-                            )
+                    self._check_event_shape(distribution)
 
                 if self.__conditional_probability_table is None:
                     self.__conditional_probability_table = []
                 self.__conditional_probability_table.append((condition, distribution))
+
+            def _check_event_shape(self, distribution):
+                """
+                Check that a distribution has the same event shape as the other
+                distributions in the conditional probability table.
+                """
+                _, other_distribution = self.__conditional_probability_table[0]
+                if other_distribution.event_shape != distribution.event_shape:
+                    raise ValueError(
+                        f"Distribution {distribution} has a different event shape "
+                        f"than previously supplied distribution "
+                        f"{other_distribution}."
+                    )
 
             @property
             def conditional_probability_table(
@@ -576,9 +764,17 @@ class BayesianNetwork(ProbabilityDistribution):
             self.__nodes: OrderedDict[
                 str, "BayesianNetwork.Factory.Node"
             ] = OrderedDict()
+            self.dtype = torch.double
 
-        def new_node(self, name: str) -> "BayesianNetwork.Factory.Node":
-            if name in self.__nodes:
+        def new_node(self, name: str, replace=False) -> "BayesianNetwork.Factory.Node":
+            """
+            Creates a new node with name :code:`name`.
+            If a node with this name already exists and :code:`replace=True`,
+            the existing node is replaced by a new node.
+            Otherwise, if :code:`replace=True`, this method throws
+            a :code:`ValueError`.
+            """
+            if name in self.__nodes and not replace:
                 raise ValueError(
                     f"Node name {name} already used. Nodes need to have unique names."
                 )
@@ -586,8 +782,24 @@ class BayesianNetwork(ProbabilityDistribution):
             self.__nodes[name] = node
             return node
 
-        def new_nodes(self, *names: str) -> tuple["BayesianNetwork.Factory.Node", ...]:
-            return tuple(self.new_node(name) for name in names)
+        def new_nodes(
+            self, *names: str, replace=False
+        ) -> tuple["BayesianNetwork.Factory.Node", ...]:
+            """
+            Creates several new nodes.
+            See :code:`add_node`.
+            """
+            return tuple(self.new_node(name, replace) for name in names)
+
+        def node(self, name: str) -> "BayesianNetwork.Factory.Node":
+            """
+            Retrieves a node named :code:`name`.
+            If no node with this name exists, a new node is created.
+            """
+            if name in self.__nodes:
+                return self.__nodes[name]
+            else:
+                return self.new_node(name)
 
         @property
         def nodes(self) -> tuple[str, ...]:
@@ -614,123 +826,11 @@ class BayesianNetwork(ProbabilityDistribution):
 
             :return: A new :code:`BayesianNetwork`.
             """
-            # Check that conditional probability tables cover the entire
-            # parent event space.
             for node in self.__nodes.values():
                 if len(node.parents) == 0:
                     continue
-                # maintain a partition of the parents space to determine if the
-                # entirety of the parents space is covered
-                partition = [{p: self.__nodes[p].event_space for p in node.parents}]
-
-                def contains(
-                    event: tuple[torch.Tensor, torch.Tensor],
-                    other: "BayesianNetwork.Factory.EventSpace",
-                ) -> bool:
-                    lower, upper = event
-                    match other:
-                        case BayesianNetwork.Factory.EventSpace.Continuous(l, u):
-                            return torch.all((lower <= l) & (u <= upper))
-                        case BayesianNetwork.Factory.EventSpace.Discrete(vals):
-                            return all(
-                                torch.all((lower <= v) & (v <= upper)) for v in vals
-                            )
-                        case BayesianNetwork.Factory.EventSpace.Unbounded():
-                            return torch.all(lower.isneginf() & upper.isposinf())
-                        case _:
-                            raise NotImplementedError()
-
-                for condition, _ in node.conditional_probability_table:
-                    new_partition = []
-                    for part in partition:
-                        # split part into covered/not covered, then filter out
-                        # what is entirely covered by condition.
-                        splits = {}
-                        for p, event_space in part.items():
-                            lower, upper = condition[p]
-                            match event_space:
-                                case BayesianNetwork.Factory.EventSpace.Unbounded():
-                                    l_ = torch.full(lower.shape, fill_value=-torch.inf)
-                                    u_ = torch.full(lower.shape, fill_value=torch.inf)
-                                    event_space = (
-                                        BayesianNetwork.Factory.EventSpace.Continuous(
-                                            l_, u_
-                                        )
-                                    )
-                            match event_space:
-                                case BayesianNetwork.Factory.EventSpace.Continuous(
-                                    l, u
-                                ):
-                                    lower_ = lower.flatten()
-                                    upper_ = upper.flatten()
-                                    l_ = l.flatten()
-                                    u_ = u.flatten()
-                                    segments = []
-                                    for i in range(lower_.size(0)):
-                                        segments_i = []
-                                        if u_[i] <= lower_[i] or upper_[i] <= l_[i]:
-                                            # no intersection
-                                            segments_i.append((l_[i], u_[i]))
-                                        else:
-                                            if l_[i] < lower_[i]:
-                                                segments_i.append((l_[i], lower_[i]))
-                                            if upper_[i] < u_[i]:
-                                                segments_i.append((upper_[i], u_[i]))
-                                            segments_i.append(
-                                                (
-                                                    max(l_[i], lower_[i]),
-                                                    min(u_[i], upper_[i]),
-                                                )
-                                            )
-                                        segments.append(segments_i)
-                                    splits[p] = [
-                                        BayesianNetwork.Factory.EventSpace.Continuous(
-                                            torch.tensor([l_ for l_, _ in segments_i]),
-                                            torch.tensor([u_ for _, u_ in segments_i]),
-                                        )
-                                        for segments_i in itertools.product(*segments)
-                                    ]
-                                case BayesianNetwork.Factory.EventSpace.Discrete(vals):
-                                    contained = []
-                                    not_contained = []
-                                    for v in vals:
-                                        if torch.all((lower <= v) & (v <= upper)):
-                                            contained.append(v)
-                                        else:
-                                            not_contained.append(v)
-                                    splits[p] = []
-                                    if len(contained) > 0:
-                                        splits[p].append(
-                                            BayesianNetwork.Factory.EventSpace.Discrete(
-                                                contained
-                                            )
-                                        )
-                                    if len(not_contained) > 0:
-                                        splits[p].append(
-                                            BayesianNetwork.Factory.EventSpace.Discrete(
-                                                not_contained
-                                            )
-                                        )
-                        splits = [
-                            [(p, s) for s in segments] for p, segments in splits.items()
-                        ]
-                        for segments in itertools.product(*splits):
-                            new_part = {p: s for p, s in segments}
-                            if all(
-                                contains(condition[p], new_part[p])
-                                for p in node.parents
-                            ):
-                                # the new part is covered
-                                continue
-                            else:
-                                new_partition.append(new_part)
-                    partition = new_partition
-                if len(partition) > 0:
-                    raise ValueError(
-                        f"Conditional probability table does not cover the entire "
-                        f"combined event space of the parents of {node.name}. "
-                        f"Not covered: {partition}."
-                    )
+                self._check_disjoint_conditions(node)
+                self._check_parent_space_covered(node)
 
             nodes = {}
             processed: set[str] = set()
@@ -744,13 +844,16 @@ class BayesianNetwork(ProbabilityDistribution):
 
                         # also replace node names by nodes in the conditional probability table
                         cond_prob_table = tuple(
-                            BayesianNetwork._ConditionalProbabilityTableEntry(
-                                {nodes[p]: event for p, event in condition.items()},
+                            _ConditionalProbabilityTableEntry(
+                                {
+                                    nodes[p]: _Event(*event)
+                                    for p, event in condition.items()
+                                },
                                 distribution,
                             )
                             for condition, distribution in node.conditional_probability_table
                         )
-                        new_node = BayesianNetwork._Node(
+                        new_node = _Node(
                             node.name,
                             parents,
                             cond_prob_table,
@@ -759,4 +862,184 @@ class BayesianNetwork(ProbabilityDistribution):
                         processed.add(node.name)
             # recreate order from self.__nodes
             nodes = tuple(nodes[node_name] for node_name in self.__nodes)
-            return BayesianNetwork(nodes)
+            return BayesianNetwork(nodes, self.dtype)
+
+        def _check_disjoint_conditions(self, node: "BayesianNetwork.Factory.Node"):
+            """
+            Checks if the conditions in the conditional probability table
+            of a node are disjoint.
+            """
+            table = node.conditional_probability_table
+            for i in range(len(table)):
+                condition, _ = table[i]
+                for j in range(i + 1, len(table)):
+                    other_condition, _ = table[j]
+                    any_disjoint = False
+                    for parent, event in condition.items():
+                        lower, upper = event
+                        other_lower, other_upper = other_condition[parent]
+                        # For continuous event spaces, intersections with measure
+                        # zero are permissible, while not permissible for discrete
+                        # event spaces.
+                        match self.__nodes[parent].event_space:
+                            case (
+                                BayesianNetwork.Factory.EventSpace.Continuous(_, _)
+                                | BayesianNetwork.Factory.EventSpace.Unbounded()
+                            ):
+                                if parent in other_condition:
+                                    if torch.any(
+                                        (lower > other_upper) | (upper < other_lower)
+                                    ):
+                                        any_disjoint = True
+                                    if torch.all(
+                                        (lower >= other_upper) | (upper <= other_lower)
+                                    ):
+                                        any_disjoint = True
+                            case BayesianNetwork.Factory.EventSpace.Discrete(vals):
+                                for val in vals:
+                                    if torch.all(
+                                        (lower <= val) & (val <= upper)
+                                    ) and torch.all(
+                                        (other_lower <= val) & (val <= other_upper)
+                                    ):
+                                        # not disjoint
+                                        break
+                                else:
+                                    # no value lies in both event and other_condition
+                                    any_disjoint = True
+                        if any_disjoint:
+                            break
+                    if not any_disjoint:
+                        raise ValueError(
+                            f"Condition {condition} in conditional probability table of "
+                            f"{node.name} not disjoint from other entry {other_condition}."
+                        )
+
+                    all_equal = True
+                    for parent, event in condition.items():
+                        if parent in other_condition:
+                            lower, upper = event
+                            other_lower, other_upper = other_condition[parent]
+                            if torch.any(
+                                (lower != other_upper) | (upper != other_lower)
+                            ):
+                                all_equal = False
+                                break
+                    if all_equal:
+                        raise ValueError(
+                            f"Condition {condition} in conditional probability table of "
+                            f"{node.name} not identical to other entry {other_condition}."
+                        )
+
+        def _check_parent_space_covered(self, node: "BayesianNetwork.Factory.Node"):
+            """
+            Check whether the conditional probability table of a node
+            covers the entire parent event space.
+            """
+            # maintain a partition of the parents space to determine if the
+            # entirety of the parents space is covered
+            partition = [{p: self.__nodes[p].event_space for p in node.parents}]
+
+            def contains(
+                event: tuple[torch.Tensor, torch.Tensor],
+                other: "BayesianNetwork.Factory.EventSpace",
+            ) -> bool:
+                lower, upper = event
+                match other:
+                    case BayesianNetwork.Factory.EventSpace.Continuous(l, u):
+                        return torch.all((lower <= l) & (u <= upper))
+                    case BayesianNetwork.Factory.EventSpace.Discrete(vals):
+                        return all(torch.all((lower <= v) & (v <= upper)) for v in vals)
+                    case BayesianNetwork.Factory.EventSpace.Unbounded():
+                        return torch.all(lower.isneginf() & upper.isposinf())
+                    case _:
+                        raise NotImplementedError()
+
+            for condition, _ in node.conditional_probability_table:
+                new_partition = []
+                for part in partition:
+                    # split part into covered/not covered, then filter out
+                    # what is entirely covered by condition.
+                    splits = {}
+                    for p, event_space in part.items():
+                        lower, upper = condition[p]
+                        match event_space:
+                            case BayesianNetwork.Factory.EventSpace.Unbounded():
+                                l_ = torch.full(lower.shape, fill_value=-torch.inf)
+                                u_ = torch.full(lower.shape, fill_value=torch.inf)
+                                event_space = (
+                                    BayesianNetwork.Factory.EventSpace.Continuous(
+                                        l_, u_
+                                    )
+                                )
+                        match event_space:
+                            case BayesianNetwork.Factory.EventSpace.Continuous(l, u):
+                                lower_ = lower.flatten()
+                                upper_ = upper.flatten()
+                                l_ = l.flatten()
+                                u_ = u.flatten()
+                                segments = []
+                                for i in range(lower_.size(0)):
+                                    segments_i = []
+                                    if u_[i] <= lower_[i] or upper_[i] <= l_[i]:
+                                        # no intersection
+                                        segments_i.append((l_[i], u_[i]))
+                                    else:
+                                        if l_[i] < lower_[i]:
+                                            segments_i.append((l_[i], lower_[i]))
+                                        if upper_[i] < u_[i]:
+                                            segments_i.append((upper_[i], u_[i]))
+                                        segments_i.append(
+                                            (
+                                                max(l_[i], lower_[i]),
+                                                min(u_[i], upper_[i]),
+                                            )
+                                        )
+                                    segments.append(segments_i)
+                                splits[p] = [
+                                    BayesianNetwork.Factory.EventSpace.Continuous(
+                                        torch.tensor([l_ for l_, _ in segments_i]),
+                                        torch.tensor([u_ for _, u_ in segments_i]),
+                                    )
+                                    for segments_i in itertools.product(*segments)
+                                ]
+                            case BayesianNetwork.Factory.EventSpace.Discrete(vals):
+                                contained = []
+                                not_contained = []
+                                for v in vals:
+                                    if torch.all((lower <= v) & (v <= upper)):
+                                        contained.append(v)
+                                    else:
+                                        not_contained.append(v)
+                                splits[p] = []
+                                if len(contained) > 0:
+                                    splits[p].append(
+                                        BayesianNetwork.Factory.EventSpace.Discrete(
+                                            contained
+                                        )
+                                    )
+                                if len(not_contained) > 0:
+                                    splits[p].append(
+                                        BayesianNetwork.Factory.EventSpace.Discrete(
+                                            not_contained
+                                        )
+                                    )
+                    splits = [
+                        [(p, s) for s in segments] for p, segments in splits.items()
+                    ]
+                    for segments in itertools.product(*splits):
+                        new_part = {p: s for p, s in segments}
+                        if all(
+                            contains(condition[p], new_part[p]) for p in node.parents
+                        ):
+                            # the new part is covered
+                            continue
+                        else:
+                            new_partition.append(new_part)
+                partition = new_partition
+            if len(partition) > 0:
+                raise ValueError(
+                    f"Conditional probability table does not cover the entire "
+                    f"combined event space of the parents of {node.name}. "
+                    f"Not covered: {partition}."
+                )
