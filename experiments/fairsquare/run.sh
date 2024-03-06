@@ -10,11 +10,11 @@ do
       --population-model "$pop_model" \
       --classifier "$classifier" \
       --no-qual \
-      | tee "experiments/output/fairsquare_${pop_model}_${classifier}_no_qual.log"
+      | tee "$HERE/../output/fairsquare_${pop_model}_${classifier}_no_qual.log"
     timeout 60s python -u "$HERE/verify.py" \
       --population-model "$pop_model" \
       --classifier "$classifier" \
       --qual \
-      | tee "experiments/output/fairsquare_${pop_model}_${classifier}_qual.log"
+      | tee "$HERE/../output/fairsquare_${pop_model}_${classifier}_qual.log"
   done
 done
