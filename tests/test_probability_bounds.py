@@ -11,8 +11,30 @@ from probspecs.bounds.probability_bounds import (
 import pytest
 
 
-@pytest.mark.parametrize("split_heuristic", SPLIT_HEURISTICS)
-def test_probability_bounds_1(split_heuristic, verification_test_nets_1d):
+@pytest.mark.parametrize(
+    "split_heuristic,split_heuristic_params",
+    (
+        pytest.param("random", {}, id="random"),
+        pytest.param("longest-edge", {"normalize": False}, id="longest-edge"),
+        pytest.param("longest-edge", {"normalize": True}, id="longest-edge-normalized"),
+        pytest.param(
+            "smart-branching", {"auto_lirpa_method": "IBP"}, id="smart-branching-IBP"
+        ),
+        pytest.param(
+            "smart-branching",
+            {"auto_lirpa_method": "CROWN"},
+            id="smart-branching-CROWN",
+        ),
+        pytest.param(
+            "smart-branching",
+            {"auto_lirpa_method": "IBP", "better_branch": False},
+            id="smart-branching-IBP-worse-branch",
+        ),
+    ),
+)
+def test_probability_bounds_1(
+    split_heuristic, split_heuristic_params, verification_test_nets_1d
+):
     """
     Test computing bounds on previously known probabilities
     """
@@ -22,7 +44,11 @@ def test_probability_bounds_1(split_heuristic, verification_test_nets_1d):
     net_func = ExternalFunction("net", ("x",))
     prob = Probability(net_func[:, 0] >= net_func[:, 1])
 
-    compute_bounds = ProbabilityBounds(batch_size=4, split_heuristic=split_heuristic)
+    compute_bounds = ProbabilityBounds(
+        batch_size=4,
+        split_heuristic=split_heuristic,
+        split_heuristic_params=split_heuristic_params,
+    )
     bounds_gen = compute_bounds.bound(
         prob, {"net": net}, {"x": input_space}, {"x": distribution}
     )
@@ -34,8 +60,30 @@ def test_probability_bounds_1(split_heuristic, verification_test_nets_1d):
         assert ub >= 0.5
 
 
-@pytest.mark.parametrize("split_heuristic", SPLIT_HEURISTICS)
-def test_probability_bounds_conditional_1(split_heuristic, verification_test_nets_1d):
+@pytest.mark.parametrize(
+    "split_heuristic,split_heuristic_params",
+    (
+        pytest.param("random", {}, id="random"),
+        pytest.param("longest-edge", {"normalize": False}, id="longest-edge"),
+        pytest.param("longest-edge", {"normalize": True}, id="longest-edge-normalized"),
+        pytest.param(
+            "smart-branching", {"auto_lirpa_method": "IBP"}, id="smart-branching-IBP"
+        ),
+        pytest.param(
+            "smart-branching",
+            {"auto_lirpa_method": "CROWN"},
+            id="smart-branching-CROWN",
+        ),
+        pytest.param(
+            "smart-branching",
+            {"auto_lirpa_method": "IBP", "better_branch": False},
+            id="smart-branching-IBP-worse-branch",
+        ),
+    ),
+)
+def test_probability_bounds_conditional_1(
+    split_heuristic, split_heuristic_params, verification_test_nets_1d
+):
     """
     Test computing bounds on previously known probabilities
     """
@@ -47,7 +95,11 @@ def test_probability_bounds_conditional_1(split_heuristic, verification_test_net
     prob = Probability(net_func[:, 0] >= net_func[:, 1], condition=x >= 0.0)
 
     compute_bounds = ProbabilityBounds()
-    compute_bounds.configure(batch_size=4, split_heuristic=split_heuristic)
+    compute_bounds.configure(
+        batch_size=4,
+        split_heuristic=split_heuristic,
+        split_heuristic_params=split_heuristic_params,
+    )
     bounds_gen = compute_bounds.bound(
         prob,
         {"net": net},
@@ -62,8 +114,30 @@ def test_probability_bounds_conditional_1(split_heuristic, verification_test_net
         assert ub >= 1.0
 
 
-@pytest.mark.parametrize("split_heuristic", SPLIT_HEURISTICS)
-def test_probability_bounds_conditional_2(split_heuristic, verification_test_nets_1d):
+@pytest.mark.parametrize(
+    "split_heuristic,split_heuristic_params",
+    (
+        pytest.param("random", {}, id="random"),
+        pytest.param("longest-edge", {"normalize": False}, id="longest-edge"),
+        pytest.param("longest-edge", {"normalize": True}, id="longest-edge-normalized"),
+        pytest.param(
+            "smart-branching", {"auto_lirpa_method": "IBP"}, id="smart-branching-IBP"
+        ),
+        pytest.param(
+            "smart-branching",
+            {"auto_lirpa_method": "CROWN"},
+            id="smart-branching-CROWN",
+        ),
+        pytest.param(
+            "smart-branching",
+            {"auto_lirpa_method": "IBP", "better_branch": False},
+            id="smart-branching-IBP-worse-branch",
+        ),
+    ),
+)
+def test_probability_bounds_conditional_2(
+    split_heuristic, split_heuristic_params, verification_test_nets_1d
+):
     """
     Test computing bounds on previously known probabilities
     """
@@ -77,7 +151,11 @@ def test_probability_bounds_conditional_2(split_heuristic, verification_test_net
     )
 
     compute_bounds = ProbabilityBounds()
-    compute_bounds.configure(batch_size=4, split_heuristic=split_heuristic)
+    compute_bounds.configure(
+        batch_size=4,
+        split_heuristic=split_heuristic,
+        split_heuristic_params=split_heuristic_params,
+    )
     bounds_gen = compute_bounds.bound(
         prob,
         {"net": net},
@@ -92,8 +170,18 @@ def test_probability_bounds_conditional_2(split_heuristic, verification_test_net
         assert ub >= 0.5
 
 
-@pytest.mark.parametrize("split_heuristic", ["longest-edge", "IBP"])
-def test_probability_bounds_conditional_3(split_heuristic, verification_test_nets_1d):
+@pytest.mark.parametrize(
+    "split_heuristic,split_heuristic_params",
+    (
+        pytest.param("longest-edge", {"normalize": False}, id="longest-edge"),
+        pytest.param(
+            "smart-branching", {"auto_lirpa_method": "IBP"}, id="smart-branching-IBP"
+        ),
+    ),
+)
+def test_probability_bounds_conditional_3(
+    split_heuristic, split_heuristic_params, verification_test_nets_1d
+):
     """
     Test computing bounds on previously known probabilities
     """
@@ -107,7 +195,11 @@ def test_probability_bounds_conditional_3(split_heuristic, verification_test_net
     )
 
     compute_bounds = ProbabilityBounds()
-    compute_bounds.configure(batch_size=4, split_heuristic=split_heuristic)
+    compute_bounds.configure(
+        batch_size=4,
+        split_heuristic=split_heuristic,
+        split_heuristic_params=split_heuristic_params,
+    )
     bounds_gen = compute_bounds.bound(
         prob,
         {"net": net, "net2": net2},
@@ -122,9 +214,30 @@ def test_probability_bounds_conditional_3(split_heuristic, verification_test_net
         assert ub >= 1.0
 
 
-@pytest.mark.parametrize("split_heuristic", SPLIT_HEURISTICS)
+@pytest.mark.parametrize(
+    "split_heuristic,split_heuristic_params",
+    (
+        pytest.param("random", {}, id="random"),
+        pytest.param("longest-edge", {"normalize": False}, id="longest-edge"),
+        pytest.param("longest-edge", {"normalize": True}, id="longest-edge-normalized"),
+        pytest.param(
+            "smart-branching", {"auto_lirpa_method": "IBP"}, id="smart-branching-IBP"
+        ),
+        pytest.param(
+            "smart-branching",
+            {"auto_lirpa_method": "CROWN"},
+            id="smart-branching-CROWN",
+        ),
+        pytest.param(
+            "smart-branching",
+            {"auto_lirpa_method": "IBP", "better_branch": False},
+            id="smart-branching-IBP-worse-branch",
+        ),
+    ),
+)
 def test_probability_bounds_compose_1(
     split_heuristic,
+    split_heuristic_params,
     verification_test_compose,
 ):
     input_space, distribution, generator, consumer = verification_test_compose
@@ -134,7 +247,11 @@ def test_probability_bounds_compose_1(
     cg = compose(c, z=g)
     prob = Probability(cg[:, 0] >= 0.31)
 
-    compute_bounds = ProbabilityBounds(batch_size=64, split_heuristic=split_heuristic)
+    compute_bounds = ProbabilityBounds(
+        batch_size=64,
+        split_heuristic=split_heuristic,
+        split_heuristic_params=split_heuristic_params,
+    )
     bounds_gen = compute_bounds.bound(
         prob,
         {"g": generator, "c": consumer},
@@ -152,10 +269,19 @@ def test_probability_bounds_compose_1(
         prev_lb, prev_ub = lb, ub
 
 
-@pytest.mark.parametrize("split_heuristic", ["longest-edge", "IBP"])
+@pytest.mark.parametrize(
+    "split_heuristic,split_heuristic_params",
+    (
+        pytest.param("longest-edge", {"normalize": False}, id="longest-edge"),
+        pytest.param(
+            "smart-branching", {"auto_lirpa_method": "IBP"}, id="smart-branching-IBP"
+        ),
+    ),
+)
 @pytest.mark.xfail  # ConvTranspose and CROWN.
 def test_probability_bounds_mnist_gen_1(
     split_heuristic,
+    split_heuristic_params,
     verification_test_mnist_conv_gen,
 ):
     gen_input_space, gen_distribution, generator = verification_test_mnist_conv_gen
@@ -164,7 +290,10 @@ def test_probability_bounds_mnist_gen_1(
     prob = Probability(g[:, 0] >= 0.25)
 
     compute_bounds = ProbabilityBounds(
-        batch_size=64, split_heuristic=split_heuristic, auto_lirpa_method="CROWN"
+        batch_size=64,
+        split_heuristic=split_heuristic,
+        split_heuristic_params=split_heuristic_params,
+        auto_lirpa_method="CROWN",
     )
     bounds_gen = compute_bounds.bound(
         prob,
@@ -183,10 +312,31 @@ def test_probability_bounds_mnist_gen_1(
         prev_lb, prev_ub = lb, ub
 
 
-@pytest.mark.parametrize("split_heuristic", SPLIT_HEURISTICS)
+@pytest.mark.parametrize(
+    "split_heuristic,split_heuristic_params",
+    (
+        pytest.param("random", {}, id="random"),
+        pytest.param("longest-edge", {"normalize": False}, id="longest-edge"),
+        pytest.param("longest-edge", {"normalize": True}, id="longest-edge-normalized"),
+        pytest.param(
+            "smart-branching", {"auto_lirpa_method": "IBP"}, id="smart-branching-IBP"
+        ),
+        pytest.param(
+            "smart-branching",
+            {"auto_lirpa_method": "CROWN"},
+            id="smart-branching-CROWN",
+        ),
+        pytest.param(
+            "smart-branching",
+            {"auto_lirpa_method": "IBP", "better_branch": False},
+            id="smart-branching-IBP-worse-branch",
+        ),
+    ),
+)
 @pytest.mark.parametrize("input_size", [3.0, 0.1], ids=("large", "small"))
 def test_probability_bounds_mnist_1(
     split_heuristic,
+    split_heuristic_params,
     verification_test_mnist_fcnn_gen,
     small_conv_mnist_net,
     input_size,
@@ -222,7 +372,11 @@ def test_probability_bounds_mnist_1(
     # probability that classifier produces "2" for images generated by the generator
     prob = Probability(class_two, condition=input_space)
 
-    compute_bounds = ProbabilityBounds(batch_size=4, split_heuristic=split_heuristic)
+    compute_bounds = ProbabilityBounds(
+        batch_size=4,
+        split_heuristic=split_heuristic,
+        split_heuristic_params=split_heuristic_params,
+    )
     bounds_gen = compute_bounds.bound(
         prob,
         {"g": generator, "c": classifier},
@@ -240,9 +394,18 @@ def test_probability_bounds_mnist_1(
         prev_lb, prev_ub = lb, ub
 
 
-@pytest.mark.parametrize("split_heuristic", ["longest-edge", "IBP"])
+@pytest.mark.parametrize(
+    "split_heuristic,split_heuristic_params",
+    (
+        pytest.param("longest-edge", {"normalize": False}, id="longest-edge"),
+        pytest.param(
+            "smart-branching", {"auto_lirpa_method": "IBP"}, id="smart-branching-IBP"
+        ),
+    ),
+)
 def test_probability_bounds_mnist_2(
     split_heuristic,
+    split_heuristic_params,
     verification_test_mnist_conv_gen,
     small_conv_mnist_net,
 ):
@@ -280,6 +443,7 @@ def test_probability_bounds_mnist_2(
     compute_bounds = ProbabilityBounds(
         batch_size=16,
         split_heuristic=split_heuristic,
+        split_heuristic_params=split_heuristic_params,
         auto_lirpa_method="ibp",  # "CROWN" leads to error
     )
     bounds_gen = compute_bounds.bound(
