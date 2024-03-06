@@ -2,7 +2,7 @@
 
 EPATH="experiments/group_fairness_tabular"
 
-timeout 4h python -u "$EPATH/verify" \
+timeout 4h python -u "$EPATH/verify.py" \
   --dataset Adult \
   --population-model bayesian-network \
   --fairness-criterion demographic-parity \
@@ -11,7 +11,7 @@ timeout 4h python -u "$EPATH/verify" \
   --advantaged-group Male \
   | tee "experiments/adult_demographic_parity_female_male.log"
 
-timeout 4h python -u "$EPATH/verify" \
+timeout 4h python -u "$EPATH/verify.py" \
   --dataset Adult \
   --population-model bayesian-network \
   --fairness-criterion demographic-parity \
@@ -20,7 +20,7 @@ timeout 4h python -u "$EPATH/verify" \
   --advantaged-group White \
   | tee "experiments/adult_demographic_parity_black_white.log"
 
-timeout 4h python -u "$EPATH/verify" \
+timeout 4h python -u "$EPATH/verify.py" \
   --dataset Adult \
   --population-model bayesian-network \
   --fairness-criterion demographic-parity \
@@ -29,7 +29,7 @@ timeout 4h python -u "$EPATH/verify" \
   --advantaged-group White \
   | tee "experiments/adult_demographic_parity_asian_pac_islander_white.log"
 
-timeout 4h python -u "$EPATH/verify" \
+timeout 4h python -u "$EPATH/verify.py" \
   --dataset Adult \
   --population-model bayesian-network \
   --fairness-criterion demographic-parity \
@@ -38,7 +38,7 @@ timeout 4h python -u "$EPATH/verify" \
   --advantaged-group White \
   | tee "experiments/adult_demographic_parity_amer_indian_eskimo_white.log"
 
-timeout 4h python -u "$EPATH/verify" \
+timeout 4h python -u "$EPATH/verify.py" \
   --dataset Adult \
   --population-model bayesian-network \
   --fairness-criterion demographic-parity \
@@ -47,7 +47,7 @@ timeout 4h python -u "$EPATH/verify" \
   --advantaged-group White \
   | tee "experiments/adult_demographic_parity_other_white.log"
 
-timeout 4h python -u "$EPATH/verify" \
+timeout 4h python -u "$EPATH/verify.py" \
   --dataset Adult \
   --population-model bayesian-network \
   --fairness-criterion demographic-parity \
@@ -56,7 +56,7 @@ timeout 4h python -u "$EPATH/verify" \
   --advantaged-group White \
   | tee "experiments/adult_demographic_parity_non_white_white.log"
 
-timeout 4h python -u "$EPATH/verify" \
+timeout 4h python -u "$EPATH/verify.py" \
   --dataset Adult \
   --population-model bayesian-network \
   --fairness-criterion demographic-parity \
@@ -65,7 +65,7 @@ timeout 4h python -u "$EPATH/verify" \
   --advantaged-group Married \
   | tee "experiments/adult_demographic_parity_own_child_married.log"
 
-timeout 4h python -u "$EPATH/verify" \
+timeout 4h python -u "$EPATH/verify.py" \
   --dataset Adult \
   --population-model bayesian-network \
   --fairness-criterion demographic-parity \
