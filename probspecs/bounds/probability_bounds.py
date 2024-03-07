@@ -61,31 +61,63 @@ class ProbabilityBounds(ConfigContainer):
 
     To refine the previously computed bounds, :code:`ProbabilityBounds` performs
     branch and bound with input splitting.
-    There are various heuristics that the algorithm can use to select splits.
+    There are various heuristics that the algorithm can use to select
+    splits and branches.
 
-    Split heuristics:
-     - :code:`"smart_branching"`: smart branching with IBP or CROWN.
-        Split the dimension that leads to the best estimated bounds.
-        The bounding method to use can be selected using the additional
-        :code:`auto_lirpa_method` parameter (default is `"IBP"`).
-        You can specify this parameter using the :code:`split_heuristic_params`
-        argument.
-        This heuristic has an additional parameter :code:`better_branch`
-        that determines which branch that results from a split is selected
-        to evaluate the split.
-        By default (:code:`better_branch=True`), a split is evaluated using the
-        bounds of the resulting branch with the better bounds.
-        When :code:`better_branch=True`, instead the branch with the worse bounds
-        is used.
-        This is the strategy of BaBSR [BunelEtAl2020]_.
+    Split Heuristics:
+     - :code:`"smart-branching"`: smart branching with IBP or CROWN.
+       Split the dimension that leads to the best estimated bounds.
+       The bounding method to use can be selected using the additional
+       :code:`auto_lirpa_method` parameter (default is `"IBP"`).
+       You can specify this parameter using the :code:`split_heuristic_params`
+       argument.
+       This heuristic has an additional parameter :code:`better_branch`
+       that determines which branch that results from a split is selected
+       to evaluate the split.
+       By default (:code:`better_branch=True`), a split is evaluated using the
+       bounds of the resulting branch with the better bounds.
+       When :code:`better_branch=True`, instead the branch with the worse bounds
+       is used.
+       This is the strategy of BaBSR [BunelEtAl2020]_.
+     - :code:`prob-weighted-smart-branching`: As smart branching, but computes
+       the probability masses in each split and weights the bounds by the probability
+       masses of the splits when selecting a branch.
      - :code:`"longest-edge"`: Split the dimension that has the largest diameter.
+       By default, this strategy normalizes the diameters to the diameters of the
+       initial variable bounds for each variable.
+       This is to make sure that the algorithm does not concentrate on splitting one
+       variable with a large initial diameter.
+       You can turn off normalization by setting the split heuristic parameter
+       :code:`normalize=False`.
      - :code:`"normalized-longest-edge"`: Split the dimension that has the largest
-        diameter, where the diameter of each dimension is normalized by the initial
-        diameter of the dimension.
-        This variant of longest edge splitting is recommended for input spaces whose
-        dimensions have different scales.
-     - :code:`"prob-balanced"`: Tries to balance the probability mass between branches.
+       diameter, where the diameter of each dimension is normalized by the initial
+       diameter of the dimension.
+       This variant of longest edge splitting is recommended for input spaces whose
+       dimensions have different scales.
      - :code:`"random"`: Randomly selects a dimension to split.
+
+    Branch Selection Heuristics:
+     - :code:`"prob-mass"`: Split the branches with the largest probability mass in them.
+     - :code:`"bounds"`: Selects the branch with the smallest lower or largest upper bounds
+       (whichever is farther from zero).
+       This broadly resembles the branch selection strategy from [BunelEtAl2020]_.
+     - :code:`"prob-and-tight-bounds"`. Combines bounds and probabilities by multiplication.
+       Broadly, the goal is to select the branch with the largest probability mass
+       and the tightest bounds, searching for branches with high probability mass that
+       are likely to be pruned soon.
+       Concretely, we compute the distance between a lower and an upper bound,
+       normalize this distance to [0.0, 1.0], subtract from one (so that
+       tight bounds get large values) and multiply by the probability mass.
+       We select the branches with the largest product of normalized bounds and
+       probability masses.
+     - :code:`"prob-and-log-bounds"`: As :code:`"prob-and-tight-bounds"`, but instead
+       of normalizing the distances to [0.0, 1.0], we compute 1 / ln(distance + 2).
+       This is then multiplied with the probability mass.
+       The resulting product values are used to select branches.
+       The idea here is to split based on probability mass when bounds are loose
+       and take them into consideration when they are relatively tight.
+     - :code:`"prob-and-tight-bounds"`: As :code:`"prob-and-tight-bounds"`, but
+       prioritizes branches with high probability mass and loose bounds.
 
     .. [BunelEtAl2020] Rudy Bunel, Jingyue Lu, Ilker Turkaslan, Philip H. S. Torr,
         Pushmeet Kohli, M. Pawan Kumar: Branch and Bound for Piecewise Linear
@@ -637,7 +669,11 @@ class ProbabilityMass:
 # MARK: score branches
 
 BRANCH_SELECTION_HEURISTIC_TYPE: Final = Literal[
-    "prob-mass", "prob-and-log-bounds", "prob-and-bounds"
+    "prob-mass",
+    "bounds",
+    "prob-and-log-bounds",
+    "prob-and-tight-bounds",
+    "prob-and-loose-bounds",
 ]
 BRANCH_SELECTION_HEURISTICS: Final[
     tuple[BRANCH_SELECTION_HEURISTIC_TYPE, ...]
@@ -665,20 +701,35 @@ class ScoreBranches:
         match self._config.branch_selection_heuristic:
             case "prob-mass":
                 return self.score_probability_mass(branches)
+            case "bounds":
+                return self.score_bounds(branches)
             case "prob-and-log-bounds":
                 return self.score_prob_and_bounds(branches, "log-decay")
-            case "prob-and-bounds":
-                return self.score_prob_and_bounds(branches, "linear")
+            case "prob-and-tight-bounds":
+                return self.score_prob_and_bounds(
+                    branches, "linear", prefer_tight_bounds=True
+                )
+            case "prob-and-loose-bounds":
+                return self.score_prob_and_bounds(
+                    branches, "linear", prefer_tight_bounds=False
+                )
             case _:
                 raise NotImplementedError()
 
     def score_probability_mass(self, branches: BranchStore) -> torch.Tensor:
         return branches.probability_mass.flatten()
 
+    def score_bounds(self, branches: BranchStore) -> torch.Tensor:
+        out_lbs = branches.out_lbs
+        out_ubs = branches.out_ubs
+        # select the branches with the loosest bounds.
+        return torch.maximum(out_ubs, -out_lbs).flatten()
+
     def score_prob_and_bounds(
         self,
         branches: BranchStore,
         transform_bounds: Literal["log-decay", "linear"],
+        prefer_tight_bounds: bool = True,
     ) -> torch.Tensor:
         """
         Selects branches with relative tight bounds and have large
@@ -695,6 +746,8 @@ class ScoreBranches:
             case "log-decay":
                 # decay: normalize to [0, 1], large ranges get lower priority over probabilities
                 bounds_decayed = 1 / torch.log(bounds_range + torch.e)
+                if not prefer_tight_bounds:
+                    bounds_decayed = 1 - bounds_decayed
             case "linear":
                 # not really a decay.
                 min_range = torch.amin(bounds_range)
@@ -702,7 +755,8 @@ class ScoreBranches:
                 # map max_range to 1.0 and min_range to 0.0
                 bounds_decayed = (bounds_range - min_range) / (max_range - min_range)
                 # flip direction: make min range 1.0 (since min_range is better)
-                bounds_decayed = 1 - bounds_decayed
+                if prefer_tight_bounds:
+                    bounds_decayed = 1 - bounds_decayed
             case _:
                 raise NotImplementedError()
         return torch.mul(prob_mass, bounds_decayed).flatten()
@@ -713,7 +767,7 @@ class ScoreBranches:
 
 SPLIT_HEURISTICS_TYPE: Final = Literal[
     "smart-branching",
-    "prob-improve-smart-branching",
+    "prob-weighted-smart-branching",
     "longest-edge",
     "random",
 ]
@@ -826,7 +880,7 @@ class SelectSplits:
         match self._config.split_heuristic:
             case "smart-branching":
                 return self.smart_branching(branches)
-            case "prob-improve-smart-branching":
+            case "prob-weighted-smart-branching":
                 return self.smart_branching(branches, prob_weighted=True)
             case "longest-edge":
                 return self.split_longest_edge(branches)
