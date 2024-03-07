@@ -636,7 +636,9 @@ class ProbabilityMass:
 
 # MARK: score branches
 
-BRANCH_SELECTION_HEURISTIC_TYPE: Final = Literal["prob-mass"]
+BRANCH_SELECTION_HEURISTIC_TYPE: Final = Literal[
+    "prob-mass", "prob-and-log-bounds", "prob-and-bounds"
+]
 BRANCH_SELECTION_HEURISTICS: Final[
     tuple[BRANCH_SELECTION_HEURISTIC_TYPE, ...]
 ] = typing.get_args(BRANCH_SELECTION_HEURISTIC_TYPE)
@@ -663,11 +665,47 @@ class ScoreBranches:
         match self._config.branch_selection_heuristic:
             case "prob-mass":
                 return self.score_probability_mass(branches)
+            case "prob-and-log-bounds":
+                return self.score_prob_and_bounds(branches, "log-decay")
+            case "prob-and-bounds":
+                return self.score_prob_and_bounds(branches, "linear")
             case _:
                 raise NotImplementedError()
 
-    def score_probability_mass(self, branches) -> torch.Tensor:
+    def score_probability_mass(self, branches: BranchStore) -> torch.Tensor:
         return branches.probability_mass.flatten()
+
+    def score_prob_and_bounds(
+        self,
+        branches: BranchStore,
+        transform_bounds: Literal["log-decay", "linear"],
+    ) -> torch.Tensor:
+        """
+        Selects branches with relative tight bounds and have large
+        probability mass.
+        Selecting branches with tight bounds is preferable, as the bounding
+        procedure might be able to prune them soon.
+        """
+        out_lbs = branches.out_lbs
+        out_ubs = branches.out_ubs
+        prob_mass = branches.probability_mass
+        # we use the bounds range as an indicator for tightness.
+        bounds_range = out_ubs - out_lbs
+        match transform_bounds:
+            case "log-decay":
+                # decay: normalize to [0, 1], large ranges get lower priority over probabilities
+                bounds_decayed = 1 / torch.log(bounds_range + torch.e)
+            case "linear":
+                # not really a decay.
+                min_range = torch.amin(bounds_range)
+                max_range = torch.amax(bounds_range)
+                # map max_range to 1.0 and min_range to 0.0
+                bounds_decayed = (bounds_range - min_range) / (max_range - min_range)
+                # flip direction: make min range 1.0 (since min_range is better)
+                bounds_decayed = 1 - bounds_decayed
+            case _:
+                raise NotImplementedError()
+        return torch.mul(prob_mass, bounds_decayed).flatten()
 
 
 # MARK: splitting
