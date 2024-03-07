@@ -3,7 +3,7 @@
 import typing
 from dataclasses import dataclass
 from math import prod
-from typing import Generator, Literal, Sequence, Callable, Final
+from typing import Generator, Literal, Sequence, Callable, Final, Optional
 
 import torch
 from frozendict import frozendict
@@ -134,6 +134,7 @@ class ProbabilityBounds(ConfigContainer):
         ] = frozendict(),
         auto_lirpa_method: str = "CROWN",
         auto_lirpa_ops: dict = frozendict(),
+        config_scheduler: Optional["ProbabilityBounds.ConfigSchedule"] = None,
         device: str | torch.device | None = None,
     ):
         """
@@ -158,6 +159,9 @@ class ProbabilityBounds(ConfigContainer):
          to use for computing bounds.
         :param auto_lirpa_ops: :code:`auto_LiRPA` bound propagation options.
          More details in the :func:`auto_LiRPA.BoundedModule` documentation.
+        :param config_scheduler: A config scheduler can update the configuration
+         of this :code:`ProbabilityBounds` instance while it refines probability
+         bounds.
         :param device: The device to compute on.
          If None, the tensors remain on the device they already reside on.
         """
@@ -174,6 +178,7 @@ class ProbabilityBounds(ConfigContainer):
             split_heuristic_params=split_heuristic_params,
             auto_lirpa_method=auto_lirpa_method,
             auto_lirpa_ops=auto_lirpa_ops,
+            config_scheduler=config_scheduler,
             device=device,
         )
 
@@ -185,6 +190,7 @@ class ProbabilityBounds(ConfigContainer):
             "split_heuristic_params",
             "auto_lirpa_method",
             "auto_lirpa_ops",
+            "config_scheduler",
             "device",
         }
     )
@@ -214,6 +220,34 @@ class ProbabilityBounds(ConfigContainer):
                 f"Use one from {', '.join(SPLIT_HEURISTICS)}."
             )
         super().configure(**kwargs)
+
+    class ConfigScheduler(typing.Protocol):
+        """
+        A :code:`ConfigScheduler` reconfigures :code:`ProbabilityBounds` instances
+        while bounds are refined.
+        For example, a :code:`ConfigScheduler` may switch to more expensive bounding
+        procedure when bounds stagnate or use a different split selection.
+        """
+
+        def reconfigure(
+            self,
+            target: "ProbabilityBounds",
+            iteration: int,
+            prob_lb: float,
+            prob_ub: float,
+        ):
+            """
+            Update the configuration of the :code:`target` :code:`ProbabilityBounds`
+            instance.
+
+            :param target: The :code:`ProbabilityBounds` instance to reconfigure.
+            :param iteration: The current iteration of :code:`target`.
+            :param prob_lb: The current lower bound on the probability that
+             :code:`target` computes bounds on.
+            :param prob_ub: The current upper bound on the probability that
+             :code:`target` computes bounds on.
+            """
+            ...
 
     def bound(
         self,
@@ -338,6 +372,7 @@ class ProbabilityBounds(ConfigContainer):
         # Note that the total probability may be < 1.0
         prob_ub = torch.sum(branches.probability_mass)
 
+        iteration = 0
         while True:
             # 0. Remove branches where subj is certainly satisfied or certainly violated.
             certainly_sat_mask = TrinaryLogic.is_true(branches.is_sat)
@@ -348,6 +383,9 @@ class ProbabilityBounds(ConfigContainer):
 
             print(f"Probability Bounds ({subj}): lb={prob_lb}, ub={prob_ub}")
             yield (prob_lb, prob_ub)
+
+            if self.config_scheduler is not None:
+                self.config_scheduler.reconfigure(self, iteration, prob_lb, prob_ub)
 
             # this is primarily for the case when apply_symbolic_bounds
             # removed all terms from subj
@@ -391,6 +429,8 @@ class ProbabilityBounds(ConfigContainer):
                 is_sat=is_sat.unsqueeze(1),
                 probability_mass=prob_mass,
             )
+
+            iteration += 1
 
         while True:
             yield (prob_lb, prob_ub)
