@@ -11,7 +11,15 @@ from experiments.fairsquare.classifiers import *
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Verify FairSquare Models")
     parser.add_argument(
-        "-p", "--population-model", choices=("ind", "BN", "BNc", "BNcc"), required=True
+        "-p",
+        "--population-model",
+        choices=("ind", "BN", "BNc", "BNcc", "eBN", "eBNc"),
+        required=True,
+        help="The population model. ind: independent, BN: Bayesian network, BNc: Bayesian network with "
+        "integrity constraint, BNcc: Bayesian network with integrity constraint and clipping, "
+        "eBN: Bayesian network encoded as probability distribution and not as input transformation, "
+        "eBNc: Bayesian network as probability distribution with integrity constraint. "
+        "The eBNs only produce in-range (clipped) outputs.",
     )
     parser.add_argument(
         "-c", "--classifier", choices=("NN_V2H1", "NN_V2H2", "NN_V3H2"), required=True
@@ -31,6 +39,12 @@ if __name__ == "__main__":
             pop_model = BayesianNetworkPopulationModel(integrity_constraint=True)
         case "BNcc":
             pop_model = BayesianNetworkPopulationModel(True, True)
+        case "eBN":
+            pop_model = ExplicitBayesianNetworkPopulationModel()
+        case "eBNc":
+            pop_model = ExplicitBayesianNetworkPopulationModel(
+                integrity_constraint=True
+            )
         case _:
             raise ValueError()
 

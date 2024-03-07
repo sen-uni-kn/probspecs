@@ -20,15 +20,16 @@ from typing import Optional
 import torch
 from torch import nn
 import torch.nn.functional as F
-from scipy.stats import norm, bernoulli
+from scipy.stats import norm, truncnorm
 
 from probspecs import TabularInputSpace, InputSpace
 from probspecs.distributions import (
-    UnivariateContinuousDistribution,
-    MultivariateIndependent,
     ProbabilityDistribution,
-    UnivariateDiscreteDistribution,
+    MultivariateIndependent,
+    BayesianNetwork,
+    Categorical,
 )
+from probspecs import distributions
 import probspecs.operations as ops
 
 AttrT = TabularInputSpace.AttributeType
@@ -77,24 +78,14 @@ class IndependentPopulationModel:
 
     @property
     def probability_distribution(self) -> ProbabilityDistribution:
-        age_distr = UnivariateContinuousDistribution(
-            norm(loc=38.5816, scale=sqrt(186.0614))
-        )
-        edu_num_distr = UnivariateContinuousDistribution(
-            norm(loc=10.0806, scale=sqrt(6.6188))
-        )
-        sex_distr = UnivariateDiscreteDistribution(
-            bernoulli(0.6693)
-        )  # 67% males in the dataset
-        capital_gain = UnivariateContinuousDistribution(
+        age_distr = distributions.wrap(norm(loc=38.5816, scale=sqrt(186.0614)))
+        edu_num_distr = distributions.wrap(norm(loc=10.0806, scale=sqrt(6.6188)))
+        sex_distr = Categorical([0.3307, 0.6693])
+        capital_gain = distributions.wrap(
             norm(loc=1077.6488, scale=sqrt(54542539.1784))
         )
-        capital_loss = UnivariateContinuousDistribution(
-            norm(loc=87.3038, scale=sqrt(162376.9378))
-        )
-        hours_per_week = UnivariateContinuousDistribution(
-            norm(loc=40.4374, scale=sqrt(152.4589))
-        )
+        capital_loss = distributions.wrap(norm(loc=87.3038, scale=sqrt(162376.9378)))
+        hours_per_week = distributions.wrap(norm(loc=40.4374, scale=sqrt(152.4589)))
         return MultivariateIndependent(
             age_distr,
             edu_num_distr,
@@ -141,88 +132,9 @@ _base_input_space = TabularInputSpace(
 )
 
 
-class _BayesianNetworkPopModelTest(nn.Module):
+class _BayesianNetworkPopModel(nn.Module):
     def __init__(self):
         super().__init__()
-        self.continuous_locs = torch.tensor(
-            [
-                38.4208,  # age 1
-                38.8125,  # age 2
-                10.0827,  # education num 1
-                10.1041,  # education num 2
-                0.0,  # sex
-            ]
-        )
-        self.continuous_scales = torch.tensor(
-            [
-                sqrt(184.9151),  # age 1
-                sqrt(193.4918),  # age 2
-                sqrt(6.5096),  # education num 1
-                sqrt(6.1522),  # education num 2
-                1.0,  # sex
-            ]
-        )
-        self.replicate_inputs = nn.Parameter(
-            torch.tensor(
-                [
-                    [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # age
-                    [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],  # edu num
-                    [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],  # sex
-                ]
-            )
-        )
-        self.replicate_sex = nn.Parameter(
-            torch.tensor(
-                [
-                    [0.0, 0.0, -1.0, 0.0, 0.0, 0.0],  # age 1
-                    [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],  # age 2
-                    [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],  # edu num 1
-                    [0.0, 0.0, -1.0, 0.0, 0.0, 0.0],  # edu num 2
-                    [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],  # for sex in cont_values
-                ]
-            )
-        )
-        self.threshold_sex = nn.Parameter(torch.tensor([0.5, -0.5, 0.5, -0.5, 0.0]))
-        self.reduce_output = nn.Parameter(
-            torch.tensor(
-                [
-                    [1.0, 1.0, 0.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 0.0, 1.0],
-                    [0.0, 0.0, 0.0, 0.0, 0.0],
-                    [0.0, 0.0, 0.0, 0.0, 0.0],
-                    [0.0, 0.0, 0.0, 0.0, 0.0],
-                ]
-            )
-        )
-        self.offset_output = nn.Parameter(
-            torch.tensor([0.0, 0.0, 0.0, 1329.3700, 86.5949, 40.3897])
-        )
-
-    def forward(self, x):
-        if x.ndim < 2:
-            x = torch.atleast_2d(x)
-
-        cont_values = F.linear(x, self.replicate_inputs)
-        cont_locs = self.continuous_locs.to(device=x.device)
-        cont_scales = self.continuous_scales.to(device=x.device)
-        cont_values = cont_scales * cont_values + cont_locs
-
-        sex = F.linear(x, self.replicate_sex, self.threshold_sex)
-        const_zero = torch.tensor(0.0, dtype=x.dtype, device=x.device)
-        sex_indicator = torch.heaviside(sex, values=const_zero)
-
-        cont_values = cont_values * sex_indicator
-        return F.linear(cont_values, self.reduce_output, self.offset_output)
-
-
-class _BayesianNetworkPopModel(nn.Module):
-    def __init__(self, integrity_constraint: bool = False, clip_outputs: bool = False):
-        super().__init__()
-        self.integrity_constraint = integrity_constraint
-        self.clip_outputs = clip_outputs
         # there's some issue with auto_LiRPA and buffers,
         # so register these tensors as parameters
         self.continuous_locs = nn.Parameter(
@@ -491,28 +403,6 @@ class _BayesianNetworkPopModel(nn.Module):
                 ]
             )
         )
-        self.extract_age_and_edu_num = nn.Parameter(
-            torch.tensor(
-                [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]]
-            )
-        )
-        self.clear_edu_num = nn.Parameter(
-            torch.tensor(
-                [
-                    [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
-                ]
-            )
-        )
-        self.enlarge_edu_num = nn.Parameter(
-            torch.tensor([[0.0], [1.0], [0.0], [0.0], [0.0], [0.0]])
-        )
-        self.output_mins = nn.Parameter(torch.tensor(_input_lbs))
-        self.output_maxs = nn.Parameter(torch.tensor(_input_ubs))
         self.const_one = nn.Parameter(torch.tensor(1.0))
 
     def forward(self, x):
@@ -546,17 +436,52 @@ class _BayesianNetworkPopModel(nn.Module):
 
         y = y * case_indicator
         z = F.linear(y, self.reduce_values)
+        return z
+
+
+class _IntegrityConstraint(nn.Module):
+    def __init__(self, integrity_constraint: bool = False, clip_outputs: bool = False):
+        super().__init__()
+        self.integrity_constraint = integrity_constraint
+        self.clip_outputs = clip_outputs
+
+        self.extract_age_and_edu_num = nn.Parameter(
+            torch.tensor(
+                [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]]
+            )
+        )
+        self.clear_edu_num = nn.Parameter(
+            torch.tensor(
+                [
+                    [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                ]
+            )
+        )
+        self.enlarge_edu_num = nn.Parameter(
+            torch.tensor([[0.0], [1.0], [0.0], [0.0], [0.0], [0.0]])
+        )
+        self.output_mins = nn.Parameter(torch.tensor(_input_lbs))
+        self.output_maxs = nn.Parameter(torch.tensor(_input_ubs))
+
+    def forward(self, x):
+        if x.ndim < 2:
+            x = torch.atleast_2d(x)
 
         if self.integrity_constraint:
-            age_and_edu_num = F.linear(z, self.extract_age_and_edu_num)
+            age_and_edu_num = F.linear(x, self.extract_age_and_edu_num)
             edu_num = torch.minimum(age_and_edu_num[:, 1:], age_and_edu_num[:, :1])
-            z = F.linear(z, self.clear_edu_num) + F.linear(
+            x = F.linear(x, self.clear_edu_num) + F.linear(
                 edu_num, self.enlarge_edu_num
             )
 
         if self.clip_outputs:
-            z = ops.clamp(z, min=self.output_mins, max=self.output_maxs)
-        return z
+            x = ops.clamp(x, min=self.output_mins, max=self.output_maxs)
+        return x
 
 
 class BayesianNetworkPopulationModel:
@@ -565,7 +490,10 @@ class BayesianNetworkPopulationModel:
     """
 
     def __init__(self, integrity_constraint: bool = False, clip_outputs: bool = False):
-        self.__pop_model = _BayesianNetworkPopModel(integrity_constraint, clip_outputs)
+        self.__pop_model = nn.Sequential(
+            _BayesianNetworkPopModel(),
+            _IntegrityConstraint(integrity_constraint, clip_outputs),
+        )
 
     @property
     def input_space(self) -> InputSpace:
@@ -574,13 +502,13 @@ class BayesianNetworkPopulationModel:
     @property
     def probability_distribution(self) -> ProbabilityDistribution:
         # 67% males in the dataset
-        sex_distr = UnivariateDiscreteDistribution(bernoulli(0.6693))
+        sex_distr = Categorical([0.3307, 0.6693])
         # distributions are rescaled by the population model.
-        age_distr = UnivariateContinuousDistribution(norm(loc=0.0, scale=1.0))
-        edu_num_distr = UnivariateContinuousDistribution(norm(loc=0.0, scale=1.0))
-        capital_gain = UnivariateContinuousDistribution(norm(loc=0.0, scale=1.0))
-        capital_loss = UnivariateContinuousDistribution(norm(loc=0.0, scale=1.0))
-        hours_per_week = UnivariateContinuousDistribution(norm(loc=0.0, scale=1.0))
+        age_distr = distributions.wrap(norm(loc=0.0, scale=1.0))
+        edu_num_distr = distributions.wrap(norm(loc=0.0, scale=1.0))
+        capital_gain = distributions.wrap(norm(loc=0.0, scale=1.0))
+        capital_loss = distributions.wrap(norm(loc=0.0, scale=1.0))
+        hours_per_week = distributions.wrap(norm(loc=0.0, scale=1.0))
         return MultivariateIndependent(
             age_distr,
             edu_num_distr,
@@ -594,3 +522,119 @@ class BayesianNetworkPopulationModel:
     @property
     def population_model(self) -> Optional[torch.nn.Module]:
         return self.__pop_model
+
+
+def _get_explicit_bayesian_network():
+    bn_factory = BayesianNetwork.Factory()
+    sex = bn_factory.new_node("sex")
+    sex.discrete_event_space([0.0], [1.0])
+    sex.set_conditional_probability({}, Categorical([0.3307, 0.6693]))
+
+    capital_gain = bn_factory.new_node("capital_gain")
+    capital_gain.add_parent(sex)
+    capital_gain_min, capital_gain_max = _classifier_input_space.attribute_bounds(
+        "capital_gain"
+    )
+    capital_gain.continuous_event_space(capital_gain_min, capital_gain_max)
+    # sex=0
+    loc = 568.4105
+    scale = sqrt(24248365.5428)
+    a, b = (capital_gain_min - loc) / scale, (capital_gain_max - loc) / scale
+    capital_gain.set_conditional_probability(
+        {sex: [0.0]}, distributions.wrap(truncnorm(a, b, loc=loc, scale=scale))
+    )
+    # sex=1
+    loc = 1329.3700
+    scale = sqrt(69327473.1006)
+    a, b = (capital_gain_min - loc) / scale, (capital_gain_max - loc) / scale
+    capital_gain.set_conditional_probability(
+        {sex: [1.0]}, distributions.wrap(truncnorm(a, b, loc=loc, scale=scale))
+    )
+
+    def make_node(var, case1, case2, case3, case4):
+        node = bn_factory.new_node(var)
+        node.set_parents(sex, capital_gain)
+        min_, max_ = _classifier_input_space.attribute_bounds(var)
+        node.continuous_event_space(min_, max_)
+
+        # case1: sex=0, capital_gain < 7298.0
+        step_female = 7298.0
+        loc, scale = case1
+        a, b = (min_ - loc) / scale, (max_ - loc) / scale
+        node.set_conditional_probability(
+            {sex: [0.0], capital_gain: ([capital_gain_min], [step_female])},
+            distributions.wrap(truncnorm(a, b, loc=loc, scale=scale)),
+        )
+        # case2: sex=0, capital_gain >= 7298.0
+        loc, scale = case2
+        a, b = (min_ - loc) / scale, (max_ - loc) / scale
+        node.set_conditional_probability(
+            {sex: [0.0], capital_gain: ([step_female], [capital_gain_max])},
+            distributions.wrap(truncnorm(a, b, loc=loc, scale=scale)),
+        )
+        # case3: sex=1, capital_gain < 5178.0
+        step_male = 5178.0
+        loc, scale = case3
+        a, b = (min_ - loc) / scale, (max_ - loc) / scale
+        node.set_conditional_probability(
+            {sex: [1.0], capital_gain: ([capital_gain_min], [step_male])},
+            distributions.wrap(truncnorm(a, b, loc=loc, scale=scale)),
+        )
+        # case4: sex=1, capital_gain >= 5178.0
+        loc, scale = case4
+        a, b = (min_ - loc) / scale, (max_ - loc) / scale
+        node.set_conditional_probability(
+            {sex: [1.0], capital_gain: ([step_male], [capital_gain_max])},
+            distributions.wrap(truncnorm(a, b, loc=loc, scale=scale)),
+        )
+
+    make_node(
+        "age",
+        (38.4208, sqrt(184.9151)),
+        (38.8125, sqrt(193.4918)),
+        (38.6361, sqrt(187.2435)),
+        (38.2668, sqrt(187.2435)),
+    )
+    make_node(
+        "education_num",
+        (10.0827, sqrt(6.5096)),
+        (10.1041, sqrt(6.1522)),
+        (10.0817, sqrt(6.4841)),
+        (10.0974, sqrt(7.1793)),
+    )
+    make_node(
+        "capital_loss",
+        (86.5949, sqrt(157731.9553)),
+        (117.8083, sqrt(252612.0300)),
+        (87.0152, sqrt(161032.4157)),
+        (101.7672, sqrt(189798.1926)),
+    )
+    make_node(
+        "hours_per_week",
+        (40.4959, sqrt(151.4148)),
+        (41.6916, sqrt(165.3773)),
+        (40.3897, sqrt(150.6723)),
+        (40.6473, sqrt(153.4823)),
+    )
+    bn_factory.reorder_nodes(_classifier_input_space.attribute_names)
+    return bn_factory.create()
+
+
+_explicit_bayesian_network = _get_explicit_bayesian_network()
+
+
+class ExplicitBayesianNetworkPopulationModel:
+    def __init__(self, integrity_constraint: bool = False, clip_outputs: bool = False):
+        self.__transform = _IntegrityConstraint(integrity_constraint, clip_outputs)
+
+    @property
+    def input_space(self) -> InputSpace:
+        return _classifier_input_space
+
+    @property
+    def probability_distribution(self) -> ProbabilityDistribution:
+        return _explicit_bayesian_network
+
+    @property
+    def population_model(self) -> Optional[torch.nn.Module]:
+        return self.__transform
