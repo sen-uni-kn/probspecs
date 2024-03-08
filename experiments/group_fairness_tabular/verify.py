@@ -14,6 +14,7 @@ from probspecs import (
     ExternalVariable,
     or_expr,
 )
+from probspecs.utils.yaml import yaml
 from experiments.group_fairness_tabular.input_spaces import adult_input_space
 
 if __name__ == "__main__":
@@ -58,6 +59,13 @@ if __name__ == "__main__":
     )
     parser.add_argument("-n", "--network", default="tiny_network.pyt")
     parser.add_argument("--fairness-eps", default=0.2)
+    parser.add_argument(
+        "--probability-bounds-config",
+        default="{}",
+        help="A configuration for computing bounds. Can be a path to a YAML file "
+        "or a yaml string. Have a look at the ProbabilityBounds class for details "
+        "on which configurations are available.",
+    )
     args = parser.parse_args()
 
     match args.dataset:
@@ -131,8 +139,15 @@ if __name__ == "__main__":
     p_advantaged = prob(good_outcome, condition=advantaged)
     is_fair = p_disadvantaged / p_advantaged > 1 - args.fairness_eps
 
+    if "{" in args.probability_bounds_config or "\n" in args.probability_bounds_config:
+        prob_bounds_config = args.probability_bounds_config
+    else:
+        prob_bounds_config = Path(args.probability_bounds_config)
+    prob_bounds_config = yaml.load(prob_bounds_config)
+    prob_bounds_config = {"batch_size": 512} | prob_bounds_config
     verifier = Verifier(
-        worker_devices="cpu", probability_bounds_config={"batch_size": 512}
+        worker_devices="cpu",
+        probability_bounds_config=prob_bounds_config,
     )
     start_time = time()
     verification_status, probability_bounds = verifier.verify(

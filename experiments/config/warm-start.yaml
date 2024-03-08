@@ -1,0 +1,9 @@
+branch_selection_heuristic: prob-mass
+split_heuristic: smart-branching
+split_heuristic_params:
+  auto_lirpa_method: IBP
+  better_branch: true
+auto_lirpa_method: CROWN
+config_scheduler: !WarmStartBounds
+  iterations: 10
+  auto_lirpa_method: IBP

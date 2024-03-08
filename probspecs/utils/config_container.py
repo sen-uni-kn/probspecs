@@ -2,10 +2,15 @@
 #  Licensed under the MIT License
 import typing
 from abc import ABC
+from copy import deepcopy
 
 from frozendict import frozendict
 
+from ruamel.yaml import yaml_object
+from .yaml import yaml
 
+
+@yaml_object(yaml)
 class ConfigContainer(ABC):
     """
     Store configurations in an instance.
@@ -18,16 +23,19 @@ class ConfigContainer(ABC):
     using `self.opt` or `getattr(self, "opt")` in any method of your subclass.
     """
 
-    def __init__(self, **options):
+    def __init__(self, **kwargs):
         """
         Creates a new :code:`ConfigContainer`.
 
         :param options: Some configurations.
         """
+        config = {key: kwargs[key] for key in kwargs if key in self.config_keys}
+        others = {key: kwargs[key] for key in kwargs if key not in self.config_keys}
+        super().__init__(**others)
         self.__config = {}
-        self.configure(**options)
+        self.configure(**config)
 
-    options = frozenset({})
+    config_keys = frozenset({})
 
     @property
     def config(self) -> frozendict[str, typing.Any]:
@@ -46,6 +54,13 @@ class ConfigContainer(ABC):
         Configures this instance.
         """
         for key in kwargs:
-            if key not in self.options:
+            if key not in self.config_keys:
                 raise ValueError(f"Unknown configuration: {key}")
         self.__config.update(kwargs)
+
+    def __copy__(self):
+        return type(self)(**self.config)
+
+    def __deepcopy__(self, memodict={}):
+        config = deepcopy(self.config, memodict)
+        return type(self)(**config)

@@ -4,9 +4,11 @@ import sys
 from enum import Enum, auto, unique
 from itertools import cycle
 from math import ceil
+import random
 from typing import Callable, Generator
 from time import time
 
+import numpy as np
 import torch
 import multiprocess as mp  # better multiprocessing using dill for serialization
 from frozendict import frozendict
@@ -96,7 +98,7 @@ class Verifier(ConfigContainer):
             network_bounds_config=network_bounds_config,
         )
 
-    options = frozenset(
+    config_keys = frozenset(
         {
             "worker_devices",
             "parallel",
@@ -369,6 +371,10 @@ def _compute_bounds_worker(
 
     :param results_queue: The :code:`multiprocessing.Queue` for posting results.
     """
+    worker_seed = torch.initial_seed()
+    np.random.seed((worker_seed + 1) % 2**32)
+    random.seed(worker_seed + 2)
+
     try:
         bounds_gen = _compute_bounds_impl(
             target_terms,

@@ -1,12 +1,14 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
 import argparse
+from pathlib import Path
 from time import time
 
 from probspecs import Verifier, prob, compose, ExternalFunction, ExternalVariable
 from experiments.fairsquare.population_models import *
 from experiments.fairsquare.classifiers import *
-
+from probspecs.bounds import WarmStartBounds
+from probspecs.utils.yaml import yaml
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Verify FairSquare Models")
@@ -28,6 +30,13 @@ if __name__ == "__main__":
     qual_group.add_argument("-q", "--qual", action="store_true")
     qual_group.add_argument("-n", "--no-qual", action="store_true")
     parser.add_argument("--fairness-eps", default=0.15)
+    parser.add_argument(
+        "--probability-bounds-config",
+        default="{}",
+        help="A configuration for computing bounds. Can be a path to a YAML file "
+             "or a yaml string. Have a look at the ProbabilityBounds class for details "
+             "on which configurations are available.",
+    )
     args = parser.parse_args()
 
     match args.population_model:
@@ -87,9 +96,15 @@ if __name__ == "__main__":
     p_advantaged = prob(high_income, condition=male & base_cond)
     is_fair = p_disadvantaged / p_advantaged > 1 - args.fairness_eps
 
+    if "{" in args.probability_bounds_config or "\n" in args.probability_bounds_config:
+        prob_bounds_config = args.probability_bounds_config
+    else:
+        prob_bounds_config = Path(args.probability_bounds_config)
+    prob_bounds_config = yaml.load(prob_bounds_config)
+    prob_bounds_config = {"batch_size": 1024} | prob_bounds_config
     verifier = Verifier(
         worker_devices="cpu",
-        probability_bounds_config={"batch_size": 1024},
+        probability_bounds_config=prob_bounds_config,
     )
     start_time = time()
     verification_status, probability_bounds = verifier.verify(

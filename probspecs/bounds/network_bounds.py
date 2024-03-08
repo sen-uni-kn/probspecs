@@ -66,7 +66,7 @@ class NetworkBounds(ConfigContainer):
             device=device,
         )
 
-    options = frozenset(
+    config_keys = frozenset(
         {
             "batch_size",
             "split_heuristic",

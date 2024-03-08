@@ -1,6 +1,8 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
 import typing
+from abc import ABC
+from copy import deepcopy
 from dataclasses import dataclass
 from math import prod
 from typing import Generator, Literal, Sequence, Callable, Final, Optional
@@ -9,6 +11,7 @@ import torch
 from frozendict import frozendict
 from torch import nn
 from auto_LiRPA import BoundedModule
+from ruamel.yaml import yaml_object
 
 from .branch_store import BranchStore
 from ..trinary_logic import TrinaryLogic
@@ -36,11 +39,16 @@ from ..utils.formula_utils import (
     make_explicit,
 )
 from ..utils.config_container import ConfigContainer
+from ..utils.names import Named
+from ..utils.yaml import yaml
 
 __all__ = [
     "SPLIT_HEURISTICS",
     "SPLIT_HEURISTICS_TYPE",
     "ProbabilityBounds",
+    "BaseConfigScheduler",
+    "WarmStartBounds",
+    "MorePreciseBoundsOnPlateau",
     "SatBounds",
     "ProbabilityMass",
     "ScoreBranches",
@@ -49,7 +57,7 @@ __all__ = [
 ]
 
 
-class ProbabilityBounds(ConfigContainer):
+class ProbabilityBounds(Named, ConfigContainer):
     """
     Computes a sequence of refined bounds on a probability.
     The :code:`bound` method produces a generator yielding lower and upper bounds
@@ -166,11 +174,11 @@ class ProbabilityBounds(ConfigContainer):
          If None, the tensors remain on the device they already reside on.
         """
         # Set the default split heuristic params if not given.
-        split_heuristic_params = split_heuristic_params | {
+        split_heuristic_params = {
             "auto_lirpa_method": "IBP",
             "better_branch": True,
             "normalize": True,
-        }
+        } | dict(split_heuristic_params)
         super().__init__(
             batch_size=batch_size,
             branch_selection_heuristic=branch_selection_heuristic,
@@ -182,7 +190,7 @@ class ProbabilityBounds(ConfigContainer):
             device=device,
         )
 
-    options = frozenset(
+    config_keys = frozenset(
         {
             "batch_size",
             "branch_selection_heuristic",
@@ -227,7 +235,17 @@ class ProbabilityBounds(ConfigContainer):
         while bounds are refined.
         For example, a :code:`ConfigScheduler` may switch to more expensive bounding
         procedure when bounds stagnate or use a different split selection.
+
+        :code:`ConfigSchedulers` are deep-copied when a :code:`ProbabilityBounds`
+        instance delegates to new :code:`ProbabilityBounds` instances.
         """
+
+        def setup(self, target: "ProbabilityBounds"):
+            """
+            Update the configuration of the :code:`target` :code:`ProbabilityBounds`
+            instance.
+            """
+            ...
 
         def reconfigure(
             self,
@@ -278,7 +296,7 @@ class ProbabilityBounds(ConfigContainer):
             p_conjoined = Probability(probability.subject & probability.condition)
             p_condition = Probability(probability.condition)
             p_conjoined_bounds = ProbabilityBounds(
-                **self.config
+                **deepcopy(self.config)
             )._unconditional_probability_bounds(
                 p_conjoined,
                 networks,
@@ -286,7 +304,7 @@ class ProbabilityBounds(ConfigContainer):
                 variable_distributions,
             )
             p_condition_bounds = ProbabilityBounds(
-                **self.config
+                **deepcopy(self.config)
             )._unconditional_probability_bounds(
                 p_condition,
                 networks,
@@ -343,6 +361,9 @@ class ProbabilityBounds(ConfigContainer):
             full_input_space, self, sat_bounds, probability_mass
         )
 
+        if self.config_scheduler is not None:
+            self.config_scheduler.setup(self)
+
         branches = BranchStore(
             in_shape=full_input_space.input_shape,
             out_shape=(1,),  # a satisfaction score
@@ -372,6 +393,7 @@ class ProbabilityBounds(ConfigContainer):
         # Note that the total probability may be < 1.0
         prob_ub = torch.sum(branches.probability_mass)
 
+        print(f"[{self.name}] Computing bounds on {probability}")
         iteration = 0
         while True:
             # 0. Remove branches where subj is certainly satisfied or certainly violated.
@@ -381,7 +403,7 @@ class ProbabilityBounds(ConfigContainer):
             prob_ub -= torch.sum(certainly_viol_mask * branches.probability_mass)
             branches.drop(certainly_sat_mask | certainly_viol_mask)
 
-            print(f"Probability Bounds ({subj}): lb={prob_lb}, ub={prob_ub}")
+            print(f"[{self.name}] New bounds: lb={prob_lb}, ub={prob_ub}")
             yield (prob_lb, prob_ub)
 
             if self.config_scheduler is not None:
@@ -434,6 +456,311 @@ class ProbabilityBounds(ConfigContainer):
 
         while True:
             yield (prob_lb, prob_ub)
+
+
+# MARK: config scheduling
+
+
+@yaml_object(yaml)
+class BaseConfigScheduler(ProbabilityBounds.ConfigScheduler, ABC):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.__successor: Optional["BaseConfigScheduler"] = None
+        self.__neighbour: Optional["BaseConfigScheduler"] = None
+
+    def setup(self, target: "ProbabilityBounds"):
+        if self.__neighbour is not None:
+            self.__neighbour.setup(target)
+
+    def reconfigure(
+        self,
+        target: "ProbabilityBounds",
+        iteration: int,
+        prob_lb: float,
+        prob_ub: float,
+    ):
+        if self.__neighbour is not None:
+            self.__neighbour.reconfigure(target, iteration, prob_lb, prob_ub)
+
+    def _finish(self, target):
+        if self.__successor is not None:
+            target.configure(config_scheduler=self.__successor)
+            self.__successor.setup(target)
+
+    def chain(self, other: "BaseConfigScheduler"):
+        if self.__successor is None:
+            self.__successor = other
+        else:
+            self.__successor.parallel(other)
+
+    def parallel(self, other: "BaseConfigScheduler"):
+        if self.__neighbour is None:
+            self.__neighbour = other
+        else:
+            self.__neighbour.parallel(other)
+
+    # YAML serialization
+    yaml_tag = "!BaseConfigScheduler"
+
+    @property
+    def state(self):
+        """
+        Return the state of this object for serialization.
+        Need to be exactly your constructor arguments.
+        """
+        raise NotImplementedError()
+
+    @classmethod
+    def to_yaml(cls, representer, node):
+        state = dict(node.state)
+        if node.__successor is not None:
+            state["successor"] = node.__successor
+        if node.__neighbour is not None:
+            state["neighbour"] = node.__neighbour
+        return representer.represent_mapping(cls.yaml_tag, state)
+
+    @classmethod
+    def from_yaml(cls, constructor, node):
+        state = constructor.construct_mapping(node, deep=True)
+        successor = neighbour = None
+        if "successor" in state:
+            successor = state["successor"]
+            del state["successor"]
+        if "neighbour" in state:
+            neighbour = state["neighbour"]
+            del state["neighbour"]
+        obj = cls(**state)
+        if successor is not None:
+            obj.chain(successor)
+        if neighbour is not None:
+            obj.parallel(neighbour)
+        return obj
+
+
+@yaml_object(yaml)
+class WarmStartBounds(ConfigContainer, BaseConfigScheduler):
+    """
+    Starts bound computation by refining the input space to improve
+    network bounds.
+
+    It sets:
+     - `branch_selection_heuristic` to `bounds`
+     - `auto_lirpa_method` to a user-set method, by default `IBP`.
+     - `split_heuristic` to `smart-branching` with `IBP` and `better_branch=False`.
+    """
+
+    def __init__(self, iterations: int = 10, auto_lirpa_method: str = "IBP"):
+        self.__initial_auto_lirpa_method = None
+        self.__initial_branch_selection_heuristic = None
+        self.__initial_split_heuristic = None
+        self.__initial_split_heuristic_params = None
+        self.__start_iter = None
+        self.__done = False
+        super().__init__(iterations=iterations, auto_lirpa_method=auto_lirpa_method)
+
+    config_keys = frozenset({"iterations", "auto_lirpa_method"})
+
+    def setup(self, target: "ProbabilityBounds"):
+        self.__initial_auto_lirpa_method = target.auto_lirpa_method
+        self.__initial_branch_selection_heuristic = target.branch_selection_heuristic
+        self.__initial_split_heuristic = target.split_heuristic
+        self.__initial_split_heuristic_params = target.split_heuristic_params
+        target.configure(
+            auto_lirpa_method=self.auto_lirpa_method,
+            branch_selection_heuristic="bounds",
+            split_heuristic="smart-branching",
+            split_heuristic_params={"auto_lirpa_method": "IBP", "better_branch": False},
+        )
+        super().setup(target)
+
+    def reconfigure(
+        self,
+        target: "ProbabilityBounds",
+        iteration: int,
+        prob_lb: float,
+        prob_ub: float,
+    ):
+        try:
+            if self.__done:  # Finished running
+                return
+            if self.__start_iter is None:
+                print(f"[{target.name}] Warm-Starting Bounds.")
+                self.__start_iter = iteration
+            if iteration - self.__start_iter >= self.iterations:
+                # End of warm start.
+                print(
+                    f"[{target.name}] Warm-Starting Bounds Finished. Resetting configuration."
+                )
+                target.auto_lirpa_method = self.__initial_auto_lirpa_method
+                target.branch_selection_heuristic = (
+                    self.__initial_branch_selection_heuristic
+                )
+                target.split_heuristic = self.__initial_split_heuristic
+                target.split_heuristic_params = self.__initial_split_heuristic_params
+                self.__done = True
+                self._finish(target)
+        finally:
+            super().reconfigure(target, iteration, prob_lb, prob_ub)
+
+    yaml_tag = "!WarmStartBounds"
+
+    @property
+    def state(self):
+        return self.config
+
+
+@yaml_object(yaml)
+class MorePreciseBoundsOnPlateau(ConfigContainer, BaseConfigScheduler):
+    """
+    Uses successively more precise (and costly) `auto_lirpa_methods` when it
+    detects the probability lower and upper bounds to plateau.
+
+    By default, when detecting a plateau, it successively upgrades the
+    `auto_lirpa_method` to
+     - `CROWN`
+     - `alpha-CROWN` with `lr=0.1` and `iterations=10`
+     - `alpha-CROWN` with `lr=0.05` and `iterations=25`
+     - `alpha-CROWN` with `lr=0.01` and `iterations=50`
+
+    The scheduler detects a plateau if the bounds have not improved more than
+    a certain threshold (1e-4 by default) for a certain number of iterations
+    (`patience`, 10 by default).
+    When a more precise bounding technique was selected, the scheduler lets it
+    run for a certain number of iterations (`cooldown`, 10 by default) before
+    tracking bounds again.
+    Therefore, if `patience` and `cooldown` are both 10, the next better bounding
+    technique will only be configured the earliest after 20 iterations after
+    the last method update.
+    """
+
+    class Step(typing.NamedTuple):
+        """
+        One step in the method cascade of a :code:`MorePreciseBoundsOnPlateau`
+        scheduler.
+        Each step can have custom threshold, patience, and cooldown values.
+        These values are for this step, that is, when the improvement in
+        bounds lies below the threshold for `patience` iterations, the next
+        step is configured, if there is one.
+        """
+
+        auto_lirpa_method: str
+        auto_lirpa_ops: dict = {}
+        threshold: float | None = None
+        patience: int | None = None
+        cooldown: int | None = None
+
+        @classmethod
+        def from_(cls, container: Sequence | typing.Mapping):
+            if isinstance(container, Sequence):
+                return cls(*container)
+            else:
+                return cls(
+                    container["auto_lirpa_method"],
+                    container["auto_lirpa_ops"],
+                    container["threshold"],
+                    container["patience"],
+                    container["cooldown"],
+                )
+
+    def __init__(
+        self,
+        cascade: Sequence["MorePreciseBoundsOnPlateau.Step"] = (
+            Step("IBP", threshold=1e-4),
+            Step("CROWN-IBP", threshold=1e-4),
+            Step("CROWN", threshold=1e-4),
+        ),
+        threshold=1e-4,
+        patience=10,
+        cooldown=10,
+    ):
+        """
+        Create a new :code:`MorePreciseBoundsOnPlateau` config scheduler.
+
+        :param cascade: A cascade of steps (four tuples of a :code:`auto_lirpa_method`,
+         a :code:`threshold`, a :code:`patience` and a :code:`cooldown`).
+         The threshold, patience, and cooldown may be :code:`None`, in which case
+         the default values from the remaining arguments of this method are used.
+        :param threshold: The default threshold for advancing to the next step in
+         the cascade.
+        :param patience: The default patience for advancing to the next step in the
+         cascade.
+        :param cooldown: The default cooldown iterations for one step in the cascade.
+        """
+        cascade = tuple(
+            MorePreciseBoundsOnPlateau.Step.from_(container) for container in cascade
+        )
+        cascade = tuple(
+            MorePreciseBoundsOnPlateau.Step(
+                method,
+                ops,
+                threshold if t is None else t,
+                patience if p is None else p,
+                cooldown if c is None else c,
+            )
+            for method, ops, t, p, c in cascade
+        )
+        super().__init__(cascade=cascade)
+        self.__step = 0
+        self.__cooldown_counter = 0
+        self.__lb_history = []  # maximal length: patience
+        self.__ub_history = []  # maximal length: patience
+
+    config_keys = frozenset({"cascade"})
+
+    def _configure_step(self, step: int, target: "ProbabilityBounds") -> str:
+        method, ops, _, _, _ = self.cascade[step]
+        # keep all ops that we don't change
+        new_ops = dict(target.auto_lirpa_ops) | ops
+        target.configure(auto_lirpa_method=method, auto_lirpa_ops=new_ops)
+        self.__lb_history = []
+        self.__ub_history = []
+        return f"Now using auto_lirpa_method={method}, auto_lirpa_ops={new_ops}."
+
+    def setup(self, target: "ProbabilityBounds"):
+        message = self._configure_step(0, target)
+        print(f"[{target.name}] MorePreciseBoundsOnPlateau scheduler set up. {message}")
+        super().setup(target)
+
+    def reconfigure(
+        self,
+        target: "ProbabilityBounds",
+        iteration: int,
+        prob_lb: float,
+        prob_ub: float,
+    ):
+        if self.__step == len(self.cascade) - 1:
+            return
+        try:
+            _, _, threshold, patience, cooldown = self.cascade[self.__step]
+            if self.__cooldown_counter < cooldown:
+                self.__cooldown_counter += 1
+                return
+
+            self.__lb_history.append(prob_lb)
+            self.__ub_history.append(prob_ub)
+            self.__lb_history = self.__lb_history[-patience:]
+            self.__ub_history = self.__ub_history[-patience:]
+
+            if len(self.__lb_history) == patience:
+                improvement_lb = prob_lb - self.__lb_history[0]
+                improvement_ub = self.__ub_history[0] - prob_ub
+                if max(improvement_lb, improvement_ub) > threshold:
+                    return
+
+                self.__step += 1
+                message = self._configure_step(self.__step, target)
+                print(
+                    f"[{target.name}] Bounds Plateauing. Updating bounding method. "
+                    f"{message}"
+                )
+        finally:
+            super().reconfigure(target, iteration, prob_lb, prob_ub)
+
+    yaml_tag = "!MorePreciseBoundsOnPlateau"
+
+    @property
+    def state(self):
+        return {"cascade": [step._asdict() for step in self.cascade]}
 
 
 # MARK: preprocessing
@@ -624,14 +951,16 @@ class SatBounds:
         self,
         var_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]],
         auto_lirpa_method: str | None = None,
+        auto_lirpa_ops: dict | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        return self.sat_bounds(var_bounds, auto_lirpa_method)
+        return self.sat_bounds(var_bounds, auto_lirpa_method, auto_lirpa_ops)
 
     @torch.no_grad()
     def sat_bounds(
         self,
         var_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]],
         auto_lirpa_method: str | None = None,
+        auto_lirpa_ops: dict | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Returns lower and upper bounds on the satisfaction function
@@ -648,7 +977,7 @@ class SatBounds:
         """
         intermediate_bounds = {
             self._subs_names[term]: self._propagate_bounds(
-                term, var_bounds, auto_lirpa_method
+                term, var_bounds, auto_lirpa_method, auto_lirpa_ops
             )
             for term in self._requires_bounds
         }
@@ -668,15 +997,22 @@ class SatBounds:
         term_: Function,
         var_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]],
         auto_lirpa_method: str | None = None,
+        auto_lirpa_ops: dict | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if isinstance(term_, ExternalVariable):
             return term_.propagate_bounds(**var_bounds)
         elif isinstance(term_, ExternalFunction):
-            network = self._networks[term_.func_name]
-            bounded_tensor = construct_bounded_tensor(*var_bounds[term_.arg_names[0]])
             method = self._config.auto_lirpa_method
+            ops = self._config.auto_lirpa_ops
             if auto_lirpa_method is not None:
                 method = auto_lirpa_method
+            if auto_lirpa_ops is not None:
+                ops = auto_lirpa_ops
+
+            network = self._networks[term_.func_name]
+            network.set_bound_opts(ops)
+            bounded_tensor = construct_bounded_tensor(*var_bounds[term_.arg_names[0]])
+            network(bounded_tensor)
             return network.compute_bounds(x=(bounded_tensor,), method=method)
         else:
             raise NotImplementedError()
