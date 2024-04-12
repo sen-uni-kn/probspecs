@@ -6,7 +6,7 @@ from pathlib import Path
 import random
 from typing import Callable
 
-from adult import Adult
+from fairnessdatasets import Adult
 import numpy as np
 import optuna
 from yaml import safe_dump, safe_load

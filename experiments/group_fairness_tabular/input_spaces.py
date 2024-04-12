@@ -1,7 +1,7 @@
 # Copyright (c) 2023 David Boetius
 # Licensed under the MIT license
 from probspecs import TabularInputSpace
-from adult import Adult
+from fairnessdatasets import Adult
 
 _INT = TabularInputSpace.AttributeType.INTEGER
 _CAT = TabularInputSpace.AttributeType.CATEGORICAL
