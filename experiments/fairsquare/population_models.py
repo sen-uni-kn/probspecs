@@ -26,8 +26,8 @@ from probspecs import TabularInputSpace, InputSpace
 from probspecs.distributions import (
     ProbabilityDistribution,
     MultivariateIndependent,
-    BayesianNetwork,
     Categorical,
+    BayesianNetwork,
 )
 from probspecs import distributions
 import probspecs.operations as ops

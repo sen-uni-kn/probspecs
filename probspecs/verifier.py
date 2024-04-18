@@ -35,6 +35,8 @@ from .utils.config_container import ConfigContainer
 
 __all__ = ["VerificationStatus", "VerificationTimeout", "Verifier"]
 
+__all__ = ["VerificationStatus", "VerificationTimeout", "verify"]
+
 
 @unique
 class VerificationStatus(Enum):
