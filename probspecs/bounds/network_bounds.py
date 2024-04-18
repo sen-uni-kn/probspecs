@@ -14,8 +14,6 @@ from ..utils.config_container import ConfigContainer
 
 __all__ = ["NetworkBounds", "split_ibp", "split_longest_edge"]
 
-__all__ = ["network_bounds", "split_ibp", "split_longest_edge"]
-
 
 SPLIT_HEURISTICS_TYPE: typing.Final = Literal[
     "IBP",
