@@ -124,7 +124,7 @@ class ProbabilityBounds(Named, ConfigContainer):
        The resulting product values are used to select branches.
        The idea here is to split based on probability mass when bounds are loose
        and take them into consideration when they are relatively tight.
-     - :code:`"prob-and-tight-bounds"`: As :code:`"prob-and-tight-bounds"`, but
+     - :code:`"prob-and-loose-bounds"`: As :code:`"prob-and-tight-bounds"`, but
        prioritizes branches with high probability mass and loose bounds.
 
     .. [BunelEtAl2020] Rudy Bunel, Jingyue Lu, Ilker Turkaslan, Philip H. S. Torr,
@@ -135,7 +135,7 @@ class ProbabilityBounds(Named, ConfigContainer):
     def __init__(
         self,
         batch_size: int = 128,
-        branch_selection_heuristic: "BRANCH_SELECTION_HEURISTIC_TYPE" = "prob-mass",
+        branch_selection_heuristic: "BRANCH_SELECTION_HEURISTIC_TYPE" = "prob-and-log-bounds",
         split_heuristic: "SPLIT_HEURISTICS_TYPE" = "smart-branching",
         split_heuristic_params: dict[
             Literal["auto_lirpa_method", "better_branch", "normalize"], bool
