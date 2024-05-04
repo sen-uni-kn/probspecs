@@ -15,7 +15,7 @@ from probspecs import (
     or_expr,
 )
 from probspecs.utils.yaml import yaml
-from experiments.group_fairness_tabular.input_spaces import adult_input_space
+from experiments.input_spaces import adult_input_space
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Verify Group Fairness")

@@ -46,6 +46,14 @@ class Uniform(ProbabilityDistribution):
         intersection_volume = torch.prod(intersection_range, dim=1)
         return intersection_volume / self.__total_volume
 
+    def density(self, elementary: torch.Tensor) -> torch.Tensor:
+        elementary.to(self.dtype)
+        return torch.where(
+            (self.__lbs <= elementary) & (elementary <= self.__ubs),
+            1.0 / self.__total_volume,
+            0.0,
+        )
+
     def sample(self, num_samples: int, seed=None) -> torch.Tensor:
         rng = torch.Generator(device=self.__lbs.device)
         if seed is None:
@@ -71,3 +79,11 @@ class Uniform(ProbabilityDistribution):
         self.__ubs = self.__ubs.to(dtype)
         self.__range = self.__range.to(dtype)
         self.__total_volume = self.__total_volume.to(dtype)
+
+    @property
+    def parameters(self) -> torch.Tensor:
+        return torch.empty((), dtype=self.dtype)
+
+    @parameters.setter
+    def parameters(self, parameters: torch.Tensor):
+        pass

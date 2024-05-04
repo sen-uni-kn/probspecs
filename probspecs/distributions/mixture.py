@@ -91,6 +91,14 @@ class MixtureModel(ProbabilityDistribution):
         weighted = (w * p for w, p in zip(self.weights, component_probs))
         return sum(weighted)
 
+    def density(self, elementary: torch.Tensor) -> torch.Tensor:
+        component_densities = (
+            component.density(elementary) for component in self.__distributions
+        )
+        component_densities = (p.to(self.dtype) for p in component_densities)
+        weighted = (w * d for w, d in zip(self.weights, component_densities))
+        return sum(weighted)
+
     def sample(self, num_samples: int, seed=None) -> torch.Tensor:
         rng = torch.Generator()
         if seed is None:
@@ -123,6 +131,41 @@ class MixtureModel(ProbabilityDistribution):
     @dtype.setter
     def dtype(self, dtype: torch.dtype):
         self.__weights = self.__weights.to(dtype)
+
+    @property
+    def parameters(self) -> torch.Tensor:
+        return torch.hstack(
+            [self.__weights]
+            + [
+                distribution.parameters.flatten()
+                for distribution in self.__distributions
+            ]
+        )
+
+    @parameters.setter
+    def parameters(self, parameters: torch.Tensor):
+        parameters = parameters.flatten().to(self.dtype)
+        weights = parameters[: self.__weights.numel()]
+        self.__weights = weights / weights.sum()
+        i = self.__weights.numel()
+        for distribution in self.__distributions:
+            prev = distribution.parameters
+            params = parameters[i : i + prev.numel()]
+            distribution.parameters = params.reshape(prev.shape)
+
+    @property
+    def _parameter_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
+        bounds = [
+            distribution._parameter_bounds for distribution in self.__distributions
+        ]
+        lbs, ubs = zip(*bounds)
+        lbs = torch.hstack(
+            [torch.zeros_like(self.__weights)] + [lb.flatten() for lb in lbs]
+        )
+        ubs = torch.hstack(
+            [torch.ones_like(self.__weights)] + [ub.flatten() for ub in ubs]
+        )
+        return lbs, ubs
 
     @staticmethod
     def from_gaussian_mixture(

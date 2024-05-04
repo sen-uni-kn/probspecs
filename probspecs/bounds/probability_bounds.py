@@ -84,7 +84,7 @@ class ProbabilityBounds(Named, ConfigContainer):
        to evaluate the split.
        By default (:code:`better_branch=True`), a split is evaluated using the
        bounds of the resulting branch with the better bounds.
-       When :code:`better_branch=True`, instead the branch with the worse bounds
+       When :code:`better_branch=False`, instead the branch with the worse bounds
        is used.
        This is the strategy of BaBSR [BunelEtAl2020]_.
      - :code:`prob-weighted-smart-branching`: As smart branching, but computes
@@ -884,16 +884,13 @@ class SatBounds:
 
     class Config(typing.Protocol):
         @property
-        def auto_lirpa_method(self) -> str:
-            ...
+        def auto_lirpa_method(self) -> str: ...
 
         @property
-        def auto_lirpa_ops(self) -> dict:
-            ...
+        def auto_lirpa_ops(self) -> dict: ...
 
         @property
-        def device(self) -> torch.device:
-            ...
+        def device(self) -> torch.device: ...
 
     def __init__(
         self,
@@ -1051,9 +1048,9 @@ BRANCH_SELECTION_HEURISTIC_TYPE: Final = Literal[
     "prob-and-tight-bounds",
     "prob-and-loose-bounds",
 ]
-BRANCH_SELECTION_HEURISTICS: Final[
-    tuple[BRANCH_SELECTION_HEURISTIC_TYPE, ...]
-] = typing.get_args(BRANCH_SELECTION_HEURISTIC_TYPE)
+BRANCH_SELECTION_HEURISTICS: Final[tuple[BRANCH_SELECTION_HEURISTIC_TYPE, ...]] = (
+    typing.get_args(BRANCH_SELECTION_HEURISTIC_TYPE)
+)
 
 
 class ScoreBranches:
@@ -1064,8 +1061,7 @@ class ScoreBranches:
 
     class Config(typing.Protocol):
         @property
-        def branch_selection_heuristic(self) -> BRANCH_SELECTION_HEURISTIC_TYPE:
-            ...
+        def branch_selection_heuristic(self) -> BRANCH_SELECTION_HEURISTIC_TYPE: ...
 
     def __init__(self, config: "ScoreBranches.Config"):
         self._config = config
@@ -1221,16 +1217,13 @@ class SelectSplits:
 
     class Config(typing.Protocol):
         @property
-        def split_heuristic(self) -> SPLIT_HEURISTICS_TYPE:
-            ...
+        def split_heuristic(self) -> SPLIT_HEURISTICS_TYPE: ...
 
         @property
-        def split_heuristic_params(self) -> dict[str, typing.Any]:
-            ...
+        def split_heuristic_params(self) -> dict[str, typing.Any]: ...
 
         @property
-        def device(self) -> torch.device:
-            ...
+        def device(self) -> torch.device: ...
 
     def __init__(
         self,
@@ -1558,9 +1551,7 @@ class SelectSplits:
 
         return Split.stack(splits), torch.stack(is_invalid)
 
-    def _get_branch_bounds(
-        self, splits
-    ) -> tuple[
+    def _get_branch_bounds(self, splits) -> tuple[
         dict[str, tuple[torch.Tensor, torch.Tensor]],
         dict[str, tuple[torch.Tensor, torch.Tensor]],
         int,

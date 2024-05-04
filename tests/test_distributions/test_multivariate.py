@@ -158,5 +158,18 @@ def test_stack_multivariates_5():
     )
 
 
+def test_fit_multivariate():
+    d1 = UnivariateContinuousDistribution(norm, parameters=(0.0, 1.0))
+    d2 = UnivariateContinuousDistribution(norm, parameters=(0.0, 1.0))
+    d = MultivariateIndependent(d1, d2, event_shape=(2,))
+
+    mu = torch.tensor([0.4, -3.1])
+    sigma = torch.tensor([1.1, 2.7])
+    data = (torch.randn((1000, 2)) - mu) * sigma
+    d.fit(data)
+    print(d1.parameters)
+    print(d2.parameters)
+
+
 if __name__ == "__main__":
     pytest.main()

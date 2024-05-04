@@ -2,14 +2,14 @@
 # Licensed under the MIT license
 import torch
 
-from .probability_distribution import ProbabilityDistribution
+from .probability_distribution import DiscreteDistribution, ProbabilityDistribution
 from .univariate import UnivariateContinuousDistribution
 
 
 __all__ = ["AsInteger"]
 
 
-class AsInteger(ProbabilityDistribution):
+class AsInteger(DiscreteDistribution):
     """
     Wraps a univariate continuous distribution as an integer distribution.
     It assumes that the values of the continuous distribution are rounded
@@ -32,7 +32,11 @@ class AsInteger(ProbabilityDistribution):
         :code:`cdf` and :code:`rvs` method (for example, a :code:`scipy.stats`
         distribution) as a ordinal distribution.
         """
-        if hasattr(distribution, "cdf") and hasattr(distribution, "rvs"):
+        if (
+            hasattr(distribution, "cdf")
+            and hasattr(distribution, "pdf")
+            and hasattr(distribution, "rvs")
+        ):
             distribution = UnivariateContinuousDistribution(distribution)
             return AsInteger(distribution)
         elif isinstance(distribution, ProbabilityDistribution):
@@ -71,3 +75,15 @@ class AsInteger(ProbabilityDistribution):
     @dtype.setter
     def dtype(self, dtype: torch.dtype):
         self.__distribution.dtype = dtype
+
+    @property
+    def parameters(self) -> torch.Tensor:
+        return self.__distribution.parameters
+
+    @parameters.setter
+    def parameters(self, parameters: torch.Tensor):
+        self.__distribution.parameters = parameters
+
+    @property
+    def _parameter_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.__distribution._parameter_bounds

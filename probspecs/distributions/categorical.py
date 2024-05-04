@@ -2,14 +2,14 @@
 # Licensed under the MIT license
 import torch
 
-from .probability_distribution import ProbabilityDistribution
+from .probability_distribution import DiscreteDistribution
 from ..utils.tensor_utils import TENSOR_LIKE, to_tensor
 
 
 __all__ = ["Categorical"]
 
 
-class Categorical(ProbabilityDistribution):
+class Categorical(DiscreteDistribution):
     """
     A categorical distribution (aka. generalized Bernoulli or Multinoulli)
     produces one from a set of discrete values that each have a certain probability.
@@ -25,6 +25,7 @@ class Categorical(ProbabilityDistribution):
         self,
         probabilities: TENSOR_LIKE,
         values: TENSOR_LIKE | None = None,
+        frozen: bool = False,
         dtype: torch.dtype = torch.double,
     ):
         """
@@ -37,18 +38,12 @@ class Categorical(ProbabilityDistribution):
         :param values: The values of this :class:`Categorical` distribution.
          If :code:`None`, the values are taken to be
          :code:`torch.arange(0, len(probabilities))`.
+        :param frozen: Whether to allow optimizing the probabilities as parameters.
         :param dtype: The floating point that this distribution uses for
          sampling and computing probabilities.
         """
         probabilities = to_tensor(probabilities, dtype).flatten()
-
-        if not torch.all((0.0 <= probabilities) & (probabilities <= 1.0)):
-            raise ValueError(
-                f"All entries of probabilities must lie in [0.0, 1.0]. "
-                f"Got: {probabilities}"
-            )
-        if not torch.isclose(torch.sum(probabilities), torch.ones((), dtype=dtype)):
-            raise ValueError(f"probabilities must sum to one. Got: {probabilities}")
+        self._check_probabilities(probabilities)
 
         if values is not None:
             values = to_tensor(values, dtype).flatten()
@@ -59,6 +54,18 @@ class Categorical(ProbabilityDistribution):
 
         self.__probabilities = probabilities
         self.__values = values
+        self.__frozen = frozen
+
+    @staticmethod
+    def _check_probabilities(probabilities: torch.Tensor):
+        dtype = probabilities.dtype
+        if not torch.all((0.0 <= probabilities) & (probabilities <= 1.0)):
+            raise ValueError(
+                f"All entries of probabilities must lie in [0.0, 1.0]. "
+                f"Got: {probabilities}"
+            )
+        if not torch.isclose(torch.sum(probabilities), torch.ones((), dtype=dtype)):
+            raise ValueError(f"probabilities must sum to one. Got: {probabilities}")
 
     @property
     def category_probabilities(self) -> torch.Tensor:
@@ -109,3 +116,28 @@ class Categorical(ProbabilityDistribution):
     def dtype(self, dtype):
         self.__probabilities = self.__probabilities.to(dtype)
         self.__values = self.__values.to(dtype)
+
+    @property
+    def parameters(self) -> torch.Tensor:
+        if self.__frozen:
+            return torch.empty((), dtype=self.dtype)
+        else:
+            return self.category_probabilities
+
+    @parameters.setter
+    def parameters(self, parameters: torch.Tensor):
+        if self.__frozen:
+            return
+        probabilities = parameters.to(dtype=self.dtype)
+        total_mass = torch.sum(probabilities)
+        self.__probabilities = probabilities / total_mass
+
+    @property
+    def _parameter_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.__frozen:
+            return super()._parameter_bounds
+        else:
+            return (
+                torch.zeros_like(self.__probabilities),
+                torch.ones_like(self.__probabilities),
+            )

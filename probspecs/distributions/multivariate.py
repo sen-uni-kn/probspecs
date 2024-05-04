@@ -82,6 +82,24 @@ class MultivariateIndependent(ProbabilityDistribution):
             prob = prob * distribution.probability((lb, ub)).to(self.__dtype)
         return prob
 
+    def density(self, elementary: torch.Tensor) -> torch.Tensor:
+        # add batch dimension if not already present
+        elementary = elementary.reshape(-1, *self.event_shape).flatten(1)
+
+        i = 0
+        density = torch.ones(
+            elementary.size(0), device=elementary.device, dtype=self.__dtype
+        )
+        for distribution, num_elements in zip(
+            self.__distributions, self.__num_elements
+        ):
+            elem = elementary[:, i : i + num_elements]
+            i += num_elements
+
+            elem = elem.reshape(-1, *distribution.event_shape)
+            density = density * distribution.density(elem).to(self.__dtype)
+        return density
+
     def sample(self, num_samples: int, seed=None) -> torch.Tensor:
         samples = []
         rng = Random()
@@ -104,3 +122,29 @@ class MultivariateIndependent(ProbabilityDistribution):
     @dtype.setter
     def dtype(self, dtype: torch.dtype):
         self.__dtype = dtype
+
+    @property
+    def parameters(self) -> torch.Tensor:
+        return torch.hstack(
+            [distribution.parameters.flatten() for distribution in self.__distributions]
+        )
+
+    @parameters.setter
+    def parameters(self, parameters: torch.Tensor):
+        parameters = parameters.flatten()
+        i = 0
+        for distribution in self.__distributions:
+            prev = distribution.parameters
+            params = parameters[i : i + prev.numel()]
+            distribution.parameters = params.reshape(prev.shape)
+            i += prev.numel()
+
+    @property
+    def _parameter_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
+        bounds = [
+            distribution._parameter_bounds for distribution in self.__distributions
+        ]
+        lbs, ubs = zip(*bounds)
+        lbs = torch.hstack([lb.flatten() for lb in lbs])
+        ubs = torch.hstack([ub.flatten() for ub in ubs])
+        return lbs, ubs

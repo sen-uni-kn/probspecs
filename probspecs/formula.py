@@ -658,8 +658,16 @@ class Expression:
                 return lb, ub
             case self.Operator.DIVIDE:
                 (x_lb, x_ub), (y_lb, y_ub) = arg_bounds
-                x_lb, x_ub = torch.as_tensor(x_lb), torch.as_tensor(x_ub)
-                y_lb, y_ub = torch.as_tensor(y_lb), torch.as_tensor(y_ub)
+                devices = [
+                    t.device
+                    for t in (x_lb, x_ub, y_lb, y_ub)
+                    if isinstance(t, torch.Tensor)
+                ]
+                device = "cpu" if len(devices) == 0 else devices[0]
+                x_lb = torch.as_tensor(x_lb, device=device)
+                x_ub = torch.as_tensor(x_ub, device=device)
+                y_lb = torch.as_tensor(y_lb, device=device)
+                y_ub = torch.as_tensor(y_ub, device=device)
 
                 lb = torch.where(
                     y_lb.gt(0) | (y_lb.eq(0) & y_ub.gt(0)), x_lb * 1 / y_ub, -torch.inf

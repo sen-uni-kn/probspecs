@@ -11,6 +11,7 @@ from probspecs.distributions import (
     UnivariateContinuousDistribution,
     AsInteger,
     Uniform,
+    Categorical,
 )
 from probspecs import distributions
 
@@ -258,6 +259,29 @@ def test_create_ten_node_bayes_net():
 
 
 ten_node_bayes_net = pytest.fixture(create_ten_node_bayes_net)
+
+
+def create_bayes_net_with_hidden():
+    factory = BayesianNetwork.Factory()
+    node, latent = factory.new_nodes("n", "l")
+
+    latent.hidden = True
+    latent.discrete_event_space(0, 1)
+    latent.set_conditional_probability({}, Categorical([0.25, 0.75]))
+
+    node.add_parent(latent)
+    node.discrete_event_space(*tuple(range(4)))
+    node.set_conditional_probability({latent: 0}, Categorical([0.5, 0.5, 0.0, 0.0]))
+    node.set_conditional_probability({latent: 1}, Categorical([0.0, 0.0, 0.1, 0.9]))
+
+    return factory.create()
+
+
+def test_create_bayes_net_with_hidden():
+    create_bayes_net_with_hidden()
+
+
+bayes_net_with_hidden = pytest.fixture(create_bayes_net_with_hidden)
 
 
 def test_create_no_duplicate_names():
@@ -553,8 +577,54 @@ def test_sample_3(bayes_net_4):
 def test_probability_1(bayes_net_1, event, expected_probability):
     event = tuple(map(torch.tensor, event))
     expected_probability = torch.tensor(expected_probability, dtype=bayes_net_1.dtype)
-    prob = bayes_net_1.probability(event)
     assert torch.allclose(bayes_net_1.probability(event), expected_probability)
+
+
+@pytest.mark.parametrize(
+    "event,expected_density",
+    [
+        ([-3.0, -16.0], 0.001575065),
+        ([3.0, 16.0], 0.001575065),
+        ([3.0, -14.0], 0.0),
+        ([0.0, -14.0], 0.141782870),
+        ([0.0, -16.0], 0.141782870),
+        ([-3.0, 14.0], 0.0),
+        ([0.0, 14.0], 0.141782870),
+        ([-3.0, -15.0], 0.002596843),
+        ([3.0, 15.0], 0.002596843),
+        ([0.0, 16.0], 0.141782870),
+        (
+            [
+                [-3.0, -16.0],
+                [3.0, 16.0],
+                [3.0, -14.0],
+                [0.0, -14.0],
+                [0.0, -16.0],
+                [-3.0, 14.0],
+                [0.0, 14.0],
+                [-3.0, -15.0],
+                [3.0, 15.0],
+                [0.0, 16.0],
+            ],
+            [
+                0.001575065,
+                0.001575065,
+                0.0,
+                0.141782870,
+                0.141782870,
+                0.0,
+                0.141782870,
+                0.002596843,
+                0.002596843,
+                0.141782870,
+            ],
+        ),
+    ],
+)
+def test_density_1(bayes_net_1, event, expected_density):
+    event = torch.tensor(event)
+    expected_density = torch.tensor(expected_density, dtype=bayes_net_1.dtype)
+    assert torch.allclose(bayes_net_1.density(event), expected_density)
 
 
 @pytest.mark.parametrize(
@@ -618,6 +688,38 @@ def test_probability_2(bayes_net_2, event, expected_probability):
     event = tuple(map(torch.tensor, event))
     expected_probability = torch.tensor(expected_probability, dtype=bayes_net_2.dtype)
     assert torch.allclose(bayes_net_2.probability(event), expected_probability)
+
+
+@pytest.mark.parametrize(
+    "event,expected_density",
+    [
+        ([0.0, 0.0, 0.0, 0.0], 0.0),
+        ([1.0, 0.0, 0.0, 0.0], 0.0),
+        ([0.0, 1.0, 0.0, 0.0], 0.0),
+        ([0.0, 0.0, 1.0, 0.0], 0.0),
+        ([1.0, 0.0, 1.0, 0.0], 0.3 * 0.1),
+        ([1.0, 0.0, 0.0, 1.0], 0.3 * 0.9),
+        ([0.0, 1.0, 1.0, 0.0], 0.7 * 0.5),
+        ([0.0, 1.0, 0.0, 1.0], 0.7 * 0.5),
+        (
+            [
+                [0.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0, 1.0],
+                [0.0, 1.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+            ],
+            [0.0, 0.0, 0.0, 0.0, 0.3 * 0.1, 0.3 * 0.9, 0.7 * 0.5, 0.7 * 0.5],
+        ),
+    ],
+)
+def test_density_2(bayes_net_2, event, expected_density):
+    event = torch.tensor(event)
+    expected_density = torch.tensor(expected_density, dtype=bayes_net_2.dtype)
+    assert torch.allclose(bayes_net_2.density(event), expected_density)
 
 
 @pytest.mark.parametrize(
@@ -697,6 +799,43 @@ def test_probability_5(ten_node_bayes_net, event, expected_probability):
         expected_probability, dtype=ten_node_bayes_net.dtype
     )
     assert torch.allclose(ten_node_bayes_net.probability(event), expected_probability)
+
+
+@pytest.mark.parametrize(
+    "event,expected_probability",
+    [
+        (([0.0], [3.0]), 1.0),
+        (([0.0], [1.0]), 0.25),
+        (([2.0], [3.0]), 0.75),
+        (([1.0], [1.0]), 0.125),
+        (([2.0], [2.0]), 0.075),
+    ],
+)
+def test_probability_6(bayes_net_with_hidden, event, expected_probability):
+    bayes_net_with_hidden.include_hidden = False
+    event = tuple(map(torch.tensor, event))
+    expected_probability = torch.tensor(
+        expected_probability, dtype=bayes_net_with_hidden.dtype
+    )
+    assert torch.allclose(
+        bayes_net_with_hidden.probability(event), expected_probability
+    )
+
+
+@pytest.mark.parametrize(
+    "event,expected_density",
+    [
+        ([0.0], 0.25 * 0.5),
+        ([1.0], 0.25 * 0.5),
+        ([2.0], 0.75 * 0.1),
+        ([3.0], 0.75 * 0.9),
+    ],
+)
+def test_density_6(bayes_net_with_hidden, event, expected_density):
+    bayes_net_with_hidden.include_hidden = False
+    event = torch.tensor(event)
+    expected_density = torch.tensor(expected_density, dtype=bayes_net_with_hidden.dtype)
+    assert torch.allclose(bayes_net_with_hidden.density(event), expected_density)
 
 
 @pytest.fixture

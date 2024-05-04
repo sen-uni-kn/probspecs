@@ -90,9 +90,11 @@ class TabularInputSpace(InputSpace):
             (
                 attr_name,
                 data_types[attr_name],
-                categorical_values[attr_name]
-                if data_types[attr_name] is self.AttributeType.CATEGORICAL
-                else ranges[attr_name],
+                (
+                    categorical_values[attr_name]
+                    if data_types[attr_name] is self.AttributeType.CATEGORICAL
+                    else ranges[attr_name]
+                ),
             )
             for attr_name in attributes
         )

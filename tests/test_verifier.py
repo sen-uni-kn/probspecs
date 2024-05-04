@@ -9,7 +9,7 @@ from probspecs import (
     Verifier,
     ExternalVariable,
 )
-from probspecs.verifier import VerificationStatus
+from probspecs.verifier import VerifyStatus, BoundStatus
 
 import pytest
 
@@ -26,7 +26,7 @@ import pytest
         ),
     ],
 )
-def test_verifier_1(verification_test_nets_1d, device):
+def test_verify_1(verification_test_nets_1d, device):
     torch.manual_seed(909628848386095)
     # net1 is a binary classifier for x >= 0
     # net2 is a binary classifier for x >= 1
@@ -48,7 +48,7 @@ def test_verifier_1(verification_test_nets_1d, device):
         {"x": input_space},
         {"x": distribution},
     )
-    assert verification_status is VerificationStatus.SATISFIED
+    assert verification_status is VerifyStatus.SATISFIED
     assert bounds[prob1][0] >= bounds[prob2][1]  # lb >= ub
     print(bounds)
 
@@ -65,7 +65,7 @@ def test_verifier_1(verification_test_nets_1d, device):
         ),
     ],
 )
-def test_verifier_2(verification_test_nets_1d, device):
+def test_verify_2(verification_test_nets_1d, device):
     torch.manual_seed(6982588305995)
     net1, net2, input_space, distribution = verification_test_nets_1d
 
@@ -84,7 +84,7 @@ def test_verifier_2(verification_test_nets_1d, device):
         {"x": input_space},
         {"x": distribution},
     )
-    assert verification_status is VerificationStatus.VIOLATED
+    assert verification_status is VerifyStatus.VIOLATED
     print(bounds)
 
 
@@ -100,7 +100,7 @@ def test_verifier_2(verification_test_nets_1d, device):
         ),
     ],
 )
-def test_verifier_compose_1(verification_test_compose, device):
+def test_verify_compose_1(verification_test_compose, device):
     torch.manual_seed(503668842212395)
     input_space, distribution, generator, consumer = verification_test_compose
 
@@ -121,7 +121,7 @@ def test_verifier_compose_1(verification_test_compose, device):
     print(bounds)
 
 
-def test_probability_bounds_mnist_1(
+def test_verify_mnist_1(
     verification_test_mnist_fcnn_gen,
     small_conv_mnist_net,
 ):
@@ -164,14 +164,14 @@ def test_probability_bounds_mnist_1(
         {"x": gen_distribution},
     )
     assert verification_status in (
-        VerificationStatus.SATISFIED,
-        VerificationStatus.VIOLATED,
+        VerifyStatus.SATISFIED,
+        VerifyStatus.VIOLATED,
     )
     print(bounds)
 
 
 @pytest.mark.xfail  # ConvTranspose and CROWN
-def test_verifier_mnist_2(verification_test_mnist_conv_gen, small_conv_mnist_net):
+def test_verify_mnist_2(verification_test_mnist_conv_gen, small_conv_mnist_net):
     gen_input_space, gen_distribution, generator = verification_test_mnist_conv_gen
     classifier = small_conv_mnist_net
 
@@ -211,10 +211,194 @@ def test_verifier_mnist_2(verification_test_mnist_conv_gen, small_conv_mnist_net
         {"x": gen_distribution},
     )
     assert verification_status in (
-        VerificationStatus.SATISFIED,
-        VerificationStatus.VIOLATED,
+        VerifyStatus.SATISFIED,
+        VerifyStatus.VIOLATED,
     )
     print(bounds)
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.xfail(
+                condition=not torch.cuda.is_available(), reason="CUDA unavailable"
+            ),
+        ),
+    ],
+)
+def test_bound_1(verification_test_nets_1d, device):
+    torch.manual_seed(909628848386095)
+    # net1 is a binary classifier for x >= 0
+    # net2 is a binary classifier for x >= 1
+    # input x is from [-10, 10] with a standard normal distribution
+    net1, _, input_space, distribution = verification_test_nets_1d
+
+    net1_func = ExternalFunction("net1", ("x",))
+    # probability x >= 0
+    prob = Probability(net1_func[:, 0] >= net1_func[:, 1])
+
+    verifier = Verifier(worker_devices=(device,))
+    status, bounds = verifier.bound(
+        prob,
+        0.01,
+        {"net1": net1},
+        {"x": input_space},
+        {"x": distribution},
+    )
+
+    match status:
+        case BoundStatus.SUCCESS(lb, ub):
+            assert ub - lb <= 0.1
+            print(lb, ub)
+        case _:
+            assert False
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.xfail(
+                condition=not torch.cuda.is_available(), reason="CUDA unavailable"
+            ),
+        ),
+    ],
+)
+def test_bound_2(verification_test_nets_1d, device):
+    torch.manual_seed(909628848386095)
+    # net1 is a binary classifier for x >= 0
+    # net2 is a binary classifier for x >= 1
+    # input x is from [-10, 10] with a standard normal distribution
+    _, net2, input_space, distribution = verification_test_nets_1d
+
+    net2_func = ExternalFunction("net2", ("x",))
+    # probability x >= 1
+    prob = Probability(net2_func[:, 0] >= net2_func[:, 1])
+
+    verifier = Verifier(worker_devices=(device,))
+    status, bounds = verifier.bound(
+        prob,
+        0.01,
+        {"net2": net2},
+        {"x": input_space},
+        {"x": distribution},
+    )
+
+    match status:
+        case BoundStatus.SUCCESS(lb, ub):
+            assert ub - lb <= 0.1
+            print(lb, ub)
+        case _:
+            assert False
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.xfail(
+                condition=not torch.cuda.is_available(), reason="CUDA unavailable"
+            ),
+        ),
+    ],
+)
+def test_bound_compose_1(verification_test_compose, device):
+    torch.manual_seed(503668842212395)
+    input_space, distribution, generator, consumer = verification_test_compose
+
+    g = ExternalFunction("g", ("x",))
+    c = ExternalFunction("c", ("z",))
+    cg = compose(c, z=g)
+    prob = Probability(cg[:, 0] >= 0.31)
+    expression = 1.0 - prob / 2.0
+
+    verifier = Verifier(worker_devices=(device,))
+    status, bounds = verifier.bound(
+        expression,
+        0.01,
+        {"g": generator, "c": consumer},
+        {"x": input_space},
+        {"x": distribution},
+    )
+
+    match status:
+        case BoundStatus.SUCCESS(lb, ub):
+            assert ub - lb <= 0.1
+            print(lb, ub)
+        case _:
+            assert False
+
+
+def test_bound_mnist_1(
+    verification_test_mnist_fcnn_gen,
+    small_conv_mnist_net,
+):
+    gen_input_space, gen_distribution, generator = verification_test_mnist_fcnn_gen
+    classifier = small_conv_mnist_net
+
+    x = ExternalVariable("x")
+    g = ExternalFunction("g", ("x",))
+    c = ExternalFunction("c", ("z",))
+    cg = compose(c, z=g)
+    class_two = (
+        (cg[:, 2] >= cg[:, 0])
+        & (cg[:, 2] >= cg[:, 1])
+        & (cg[:, 2] >= cg[:, 3])
+        & (cg[:, 2] >= cg[:, 4])
+        & (cg[:, 2] >= cg[:, 5])
+        & (cg[:, 2] >= cg[:, 6])
+        & (cg[:, 2] >= cg[:, 7])
+        & (cg[:, 2] >= cg[:, 8])
+        & (cg[:, 2] >= cg[:, 9])
+    )
+    class_seven = (
+        (cg[:, 7] >= cg[:, 0])
+        & (cg[:, 7] >= cg[:, 1])
+        & (cg[:, 7] >= cg[:, 2])
+        & (cg[:, 7] >= cg[:, 3])
+        & (cg[:, 7] >= cg[:, 4])
+        & (cg[:, 7] >= cg[:, 5])
+        & (cg[:, 7] >= cg[:, 6])
+        & (cg[:, 7] >= cg[:, 8])
+        & (cg[:, 7] >= cg[:, 9])
+    )
+    input_space = (
+        (x[:, 0] >= -3.0)
+        & (x[:, 0] <= 3.0)
+        & (x[:, 1] >= -3.0)
+        & (x[:, 1] <= 3.0)
+        & (x[:, 2] >= -3.0)
+        & (x[:, 2] <= 3.0)
+        & (x[:, 3] >= -3.0)
+        & (x[:, 3] <= 3.0)
+    )
+    # probability that classifier produces "2" for images generated by the generator
+    p_two = Probability(class_two, condition=input_space)
+    p_seven = Probability(class_seven, condition=input_space)
+    likelihood_ratio = p_two / p_seven
+
+    verifier = Verifier(worker_devices="cpu", timeout=1.0)
+    status, bounds = verifier.bound(
+        likelihood_ratio,
+        0.001,
+        {"g": generator, "c": classifier},
+        {"x": gen_input_space},
+        {"x": gen_distribution},
+    )
+
+    match status:
+        case BoundStatus.SUCCESS(lb, ub):
+            assert ub - lb <= 0.001
+            print(lb, ub)
+        case BoundStatus.TIMEOUT(lb, ub):
+            print(lb, ub)
 
 
 if __name__ == "__main__":

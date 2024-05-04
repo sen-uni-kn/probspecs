@@ -30,7 +30,12 @@ class CategoricalOneHot(Categorical):
     (a categorical distribution is a Multinomial distribution with n=1).
     """
 
-    def __init__(self, probabilities: TENSOR_LIKE, dtype: torch.dtype = torch.double):
+    def __init__(
+        self,
+        probabilities: TENSOR_LIKE,
+        frozen: bool = False,
+        dtype: torch.dtype = torch.double,
+    ):
         """
         Create a new :code:`CategoricalOneHot` distribution.
 
@@ -38,10 +43,11 @@ class CategoricalOneHot(Categorical):
          tensor.
          The entries of :code:`probability` must lie in [0.0, 1.0]
          and must sum to one.
+        :param frozen: Whether to allow optimizing the probabilities as parameters.
         :param dtype: The floating point that this distribution uses for
          sampling and computing probabilities.
         """
-        super().__init__(probabilities, values=None, dtype=dtype)
+        super().__init__(probabilities, values=None, frozen=frozen, dtype=dtype)
         # Each row of weighted_values is a one-hot encoded vector
         # It has shape (1, n, n), as this is useful when computing probabilities
         self.__values = torch.eye(self.category_probabilities.size(0), dtype=dtype)

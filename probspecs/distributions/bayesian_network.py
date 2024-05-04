@@ -1,9 +1,11 @@
-# Copyright (c) 2023 David Boetius
+# Copyright (c) 2024 David Boetius
 # Licensed under the MIT license
 import itertools
+import operator
 from collections import OrderedDict
 from dataclasses import dataclass
 import random
+from functools import reduce
 from math import prod
 from typing import Sequence, Union, NamedTuple
 
@@ -68,11 +70,16 @@ class _ConditionalProbabilityTableEntry(NamedTuple):
 class _Node:
     """
     A node of a :code:`BayesianNetwork`.
+
+    Nodes can be hidden (also called latent).
+    If hidden, nodes don't appear in samples unless explicitly requested
+    using :code:`BayesianNetwork.include_hidden`.
     """
 
     name: str
     parents: tuple["_Node", ...]
     conditional_probability_table: tuple[_ConditionalProbabilityTableEntry, ...]
+    hidden: bool
 
     def __eq__(self, other):
         return self is other
@@ -82,7 +89,7 @@ class _Node:
 
     def __repr__(self):
         parent_names = ", ".join([parent.name for parent in self.parents])
-        return f"_Node(name={self.name}, parents={{{parent_names}}}, id={id(self)})"
+        return f"_Node(name={self.name}, parents={{{parent_names}}}, hidden={self.hidden}, id={id(self)})"
 
 
 class BayesianNetwork(ProbabilityDistribution):
@@ -130,9 +137,20 @@ class BayesianNetwork(ProbabilityDistribution):
                             f"probability table of node {node.name} do not match the "
                             f"event shape of {parent.name}."
                         ) from e
+        self.__include_hidden = False
 
         # For matching event elements to nodes
         self.__output_space = CombinedInputSpace(
+            {
+                node.name: TensorInputSpace(
+                    torch.full(self.__node_event_shapes[node], fill_value=-torch.inf),
+                    torch.full(self.__node_event_shapes[node], fill_value=torch.inf),
+                )
+                for node in self.__original_order
+                if not node.hidden
+            }
+        )
+        self.__output_space_including_hidden = CombinedInputSpace(
             {
                 node.name: TensorInputSpace(
                     torch.full(self.__node_event_shapes[node], fill_value=-torch.inf),
@@ -183,7 +201,7 @@ class BayesianNetwork(ProbabilityDistribution):
         for node in nodes_ordered:
             table = tuple(map(convert_table_entry, node.conditional_probability_table))
             parents = tuple(converted[node] for node in node.parents)
-            new_node = _Node(node.name, parents, table)
+            new_node = _Node(node.name, parents, table, node.hidden)
             converted[node] = new_node
 
         new_nodes_ordered = tuple(converted.values())  # dict remembers insertion order
@@ -283,6 +301,10 @@ class BayesianNetwork(ProbabilityDistribution):
         # = Σ_i P(E ∈ [e1, e2] | condition_i)
         #       * P(condition_i ∧ A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2])
         #       / P(A ∈ [a1, a2] ∧ B ∈ [b1, b2] ∧ C ∈ [c1, c2])
+        #
+        # Note on hidden nodes:
+        # Work just as other nodes, but when :code:`self.include_hidden` is false, we insert
+        # the hidden node's entire event space into event.
 
         @dataclass(frozen=True)
         class AtomicEvent:
@@ -312,8 +334,14 @@ class BayesianNetwork(ProbabilityDistribution):
                 node_condition = condition[self.node]
                 now_applied = frozenset([id(node_condition), *self.applied_conditions])
                 condition_lower, condition_upper = node_condition
-                new_lower = torch.maximum(self.lower, condition_lower)
-                new_upper = torch.minimum(self.upper, condition_upper)
+                if self.lower is not None:
+                    new_lower = torch.maximum(self.lower, condition_lower)
+                else:
+                    new_lower = condition_lower
+                if self.upper is not None:
+                    new_upper = torch.minimum(self.upper, condition_upper)
+                else:
+                    new_upper = condition_upper
                 # the above may make new_lower > new_upper, but we can't fix this
                 # here, because we would have to differentiate discrete and continuous
                 # event spaces.
@@ -324,13 +352,30 @@ class BayesianNetwork(ProbabilityDistribution):
 
         lower, upper = event
         lower, upper = lower.to(self.dtype), upper.to(self.dtype)
-        lower = self.__output_space.decompose(torch.atleast_2d(lower))
-        upper = self.__output_space.decompose(torch.atleast_2d(upper))
+        out_space = (
+            self.__output_space
+            if not self.include_hidden
+            else self.__output_space_including_hidden
+        )
+        lower = out_space.decompose(torch.atleast_2d(lower))
+        upper = out_space.decompose(torch.atleast_2d(upper))
         event = tuple(
-            AtomicEvent(
-                node,
-                lower[node.name].reshape(-1, *self.__node_event_shapes[node]),
-                upper[node.name].reshape(-1, *self.__node_event_shapes[node]),
+            (
+                AtomicEvent(
+                    node,
+                    lower[node.name].reshape(-1, *self.__node_event_shapes[node]),
+                    upper[node.name].reshape(-1, *self.__node_event_shapes[node]),
+                )
+                if not node.hidden or self.include_hidden
+                else AtomicEvent(
+                    node,
+                    torch.full(
+                        (1, *self.__node_event_shapes[node]), fill_value=-torch.inf
+                    ),
+                    torch.full(
+                        (1, *self.__node_event_shapes[node]), fill_value=torch.inf
+                    ),
+                )
             )
             for node in self.__nodes
         )
@@ -398,13 +443,103 @@ class BayesianNetwork(ProbabilityDistribution):
                 # Computing the probability of an empty intersection using the
                 # chain rule may lead to undefined terms (if we condition
                 # on an empty set).
-                node_prob += subject_given_condition * intersection_prob
+                node_prob = node_prob + subject_given_condition * intersection_prob
                 # All terms in the sum are divided by P(parent_event),
                 # so we factor that out
 
             return node_prob / parents_prob
 
         return probability_of_conjunction(event)
+
+    def density(self, elementary: torch.Tensor) -> torch.Tensor:
+        # The probability density of an elementary event `e` is computed in the same
+        # way as the probability of an event, but only one condition in a conditional
+        # probability table can match for `e`, we compute the density in a single pass
+        # over the network.
+        # For the graph:
+        # A     B
+        #  ↘   ↙
+        #    C
+        #  ↙  ↘
+        # D    E
+        # p((a, b, c, d, e))
+        # = p(E = e | A = a ∧ B = b ∧ C = c)
+        #   * p(D = d | A = a ∧ B = b ∧ C = c)
+        #   * p(C = c | A = a ∧ B = b)
+        #   * p(A = a)
+        #   * p(B = b)
+        # where
+        # p(E = e | A = a ∧ B = b ∧ C = c)
+        # = p(E = e | matching_condition)
+        #   * p(matching_condition ∧ A = a ∧ B = b ∧ C = c) / p(A = a ∧ B = b ∧ C = c)
+        # = p(E = e | matching_condition)
+        # where matching_condition is the condition in the conditional probability
+        # table of E that matches for (a, b, c).
+        # The last step in the derivation is since A = a ∧ B = b ∧ C = c implies
+        # matching_condition and, therefore,
+        # p(matching_condition ∧ A = a ∧ B = b ∧ C = c) = p(A = a ∧ B = b ∧ C = c).
+        #
+        # For hidden/latent variables, we sum out the values of the latent variable
+        # as when computing probabilities.
+        #
+        if elementary.shape == self.event_shape:
+            elementary = elementary.to(self.dtype).reshape(1, *self.event_shape)
+        out_space = (
+            self.__output_space
+            if not self.include_hidden
+            else self.__output_space_including_hidden
+        )
+        e = out_space.decompose(elementary)
+
+        def condition_probability_hidden(hidden_node, condition):
+            """
+            Computes the probability that a hidden node matches a certain
+            condition.
+            """
+            # Select the distribution that matches the elementary event.
+            # We disallow other hidden nodes as parents of hidden nodes.
+            for parent in hidden_node.parents:
+                if parent.hidden:
+                    raise NotImplementedError(
+                        "Hidden nodes as parents of other hidden nodes are currently unsupported."
+                        f"Node {hidden_node.name} as hidden parent {parent.name}."
+                    )
+            probability = torch.zeros(elementary.size(0), dtype=self.dtype)
+            for cond, distr in hidden_node.conditional_probability_table:
+                matches = torch.full((elementary.size(0),), fill_value=True)
+                for parent, (l, u) in cond.items():
+                    l = l.unsqueeze(0)  # add batch dim
+                    u = u.unsqueeze(0)
+                    parent_e = e[parent.name]
+                    parent_matches = (l <= parent_e) & (parent_e <= u)
+                    matches &= torch.all(parent_matches.flatten(1), dim=-1)
+                probability += matches.float() * distr.probability(condition)
+            return probability
+
+        density = torch.ones(elementary.size(0), dtype=self.dtype)
+        for node in self.__nodes:  # nodes are ordered from sources to sinks
+            # Hidden nodes do not appear in the elementary event
+            # and, therefore, do not influence the density.
+            if not node.hidden or self.include_hidden:
+                node_e = e[node.name]
+                node_density = torch.zeros(elementary.size(0), dtype=self.dtype)
+                for condition, distribution in node.conditional_probability_table:
+                    conditional_density = distribution.density(node_e)
+                    matches = torch.full((elementary.size(0),), fill_value=True)
+                    for parent, (l, u) in condition.items():
+                        l = l.unsqueeze(0)  # add batch dim
+                        u = u.unsqueeze(0)
+                        if not parent.hidden or self.include_hidden:
+                            parent_e = e[parent.name]
+                            parent_matches = (l <= parent_e) & (parent_e <= u)
+                            matches &= torch.all(parent_matches.flatten(1), dim=-1)
+                        else:
+                            conditional_density *= condition_probability_hidden(
+                                parent, (l, u)
+                            )
+                    node_density += matches.float() * conditional_density
+                density *= node_density
+        return density
 
     def sample(self, num_samples: int, seed=None) -> torch.Tensor:
         cache = {}
@@ -430,7 +565,24 @@ class BayesianNetwork(ProbabilityDistribution):
                 select.unsqueeze_(-1)
                 sample = torch.where(select, sample_j, sample)
             cache[node] = sample
-        return torch.hstack([cache[node] for node in self.__original_order])
+        return torch.hstack(
+            [
+                cache[node]
+                for node in self.__original_order
+                if self.include_hidden or not node.hidden
+            ]
+        )
+
+    @property
+    def include_hidden(self) -> bool:
+        """
+        Whether the events and samples of this Bayesian Network include hidden nodes.
+        """
+        return self.__include_hidden
+
+    @include_hidden.setter
+    def include_hidden(self, value: bool) -> None:
+        self.__include_hidden = value
 
     @property
     def event_shape(self) -> torch.Size:
@@ -443,6 +595,40 @@ class BayesianNetwork(ProbabilityDistribution):
     @dtype.setter
     def dtype(self, dtype: torch.dtype):
         self.__dtype = dtype
+
+    @property
+    def parameters(self) -> torch.Tensor:
+        return torch.hstack(
+            [
+                distribution.parameters.flatten()
+                for node in self.__nodes
+                for _, distribution in node.conditional_probability_table
+            ]
+        )
+
+    @parameters.setter
+    def parameters(self, parameters: torch.Tensor):
+        parameters = parameters.flatten()
+        i = 0
+        for node in self.__nodes:
+            for _, distribution in node.conditional_probability_table:
+                prev = distribution.parameters
+                params = parameters[i : i + prev.numel()]
+                distribution.parameters = params.reshape(prev.shape)
+                i += prev.numel()
+
+    @property
+    def _parameter_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
+        bounds = [
+            distribution._parameter_bounds
+            for node in self.__nodes
+            for _, distribution in node.conditional_probability_table
+        ]
+
+        lbs, ubs = zip(*bounds)
+        lbs = torch.hstack([lb.flatten() for lb in lbs])
+        ubs = torch.hstack([ub.flatten() for ub in ubs])
+        return lbs, ubs
 
     @property
     def output_space(self) -> CombinedInputSpace:
@@ -488,17 +674,35 @@ class BayesianNetwork(ProbabilityDistribution):
                 self.__event_space: "BayesianNetwork.Factory.EventSpace" = (
                     BayesianNetwork.Factory.EventSpace.Unbounded()
                 )
-                self.__conditional_probability_table: tuple[
+                self.__conditional_probability_table: (
                     tuple[
-                        dict[str, tuple[torch.Tensor, torch.Tensor]],
-                        ProbabilityDistribution,
-                    ],
-                    ...,
-                ] | None = None
+                        tuple[
+                            dict[str, tuple[torch.Tensor, torch.Tensor]],
+                            ProbabilityDistribution,
+                        ],
+                        ...,
+                    ]
+                    | None
+                ) = None
+                self.__hidden: bool = False
 
             @property
             def name(self) -> str:
                 return self.__name
+
+            @property
+            def hidden(self) -> bool:
+                """
+                Whether the node is a hidden (also known latent) node.
+                """
+                return self.__hidden
+
+            @hidden.setter
+            def hidden(self, hidden: bool):
+                """
+                Sets this node to be a hidden (or latent) node, or a regular node.
+                """
+                self.__hidden = hidden
 
             def add_parent(
                 self,
@@ -761,9 +965,9 @@ class BayesianNetwork(ProbabilityDistribution):
                     )
 
         def __init__(self):
-            self.__nodes: OrderedDict[
-                str, "BayesianNetwork.Factory.Node"
-            ] = OrderedDict()
+            self.__nodes: OrderedDict[str, "BayesianNetwork.Factory.Node"] = (
+                OrderedDict()
+            )
             self.dtype = torch.double
 
         def new_node(self, name: str, replace=False) -> "BayesianNetwork.Factory.Node":
@@ -857,6 +1061,7 @@ class BayesianNetwork(ProbabilityDistribution):
                             node.name,
                             parents,
                             cond_prob_table,
+                            node.hidden,
                         )
                         nodes[node.name] = new_node
                         processed.add(node.name)

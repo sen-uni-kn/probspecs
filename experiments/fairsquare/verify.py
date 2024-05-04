@@ -34,8 +34,8 @@ if __name__ == "__main__":
         "--probability-bounds-config",
         default="{}",
         help="A configuration for computing bounds. Can be a path to a YAML file "
-             "or a yaml string. Have a look at the ProbabilityBounds class for details "
-             "on which configurations are available.",
+        "or a yaml string. Have a look at the ProbabilityBounds class for details "
+        "on which configurations are available.",
     )
     args = parser.parse_args()
 

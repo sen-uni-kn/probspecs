@@ -10,13 +10,16 @@
    [here](https://pytorch.org/get-started/previous-versions/#v1121)
  - Create a new conda environment using
    ```shell
-   conda env create -n YOUR_PREFERRED_ENVIROMENT_NAME -f environment.yaml
+   NAME=YOUR_PREFERRED_ENVIROMENT_NAME
+   conda env create -n $NAME -f environment.yaml
+   conda env env config vars set PYTHONPATH="$(pwd)" -n $NAME 
    ```
  - Install `auto_LiRPA` using
    ```shell
    git submodule update --init  # pull auto_LiRPA if not already present
-   conda activate YOUR_PREFERRED_ENVIRONENT_NAME
+   conda activate $NAME
    cd auto_LiRPA
-   python setup.py install
+   pip install .
    ```
  Now you are ready to run the experiments in this repository.
+

@@ -5,25 +5,27 @@ from enum import Enum, auto, unique
 from itertools import cycle
 from math import ceil
 import random
-from typing import Callable, Generator
+from typing import Callable, Generator, TypeVar
 from time import time
 
 import numpy as np
 import torch
 import multiprocess as mp  # better multiprocessing using dill for serialization
 from frozendict import frozendict
+import rust_enum
 
 from .distributions.probability_distribution import ProbabilityDistribution
 from .input_space import InputSpace
 from .formula import (
     Formula,
-    Probability,
-    Function,
     Inequality,
+    Expression,
+    Function,
+    Probability,
     ExternalFunction,
     ExternalVariable,
 )
-from .trinary_logic import TrinaryLogic as TL
+from .trinary_logic import TrinaryLogic as TL, TrinaryLogic
 from .bounds.probability_bounds import ProbabilityBounds
 from .bounds.network_bounds import NetworkBounds
 from .utils.formula_utils import (
@@ -33,11 +35,11 @@ from .utils.formula_utils import (
 )
 from .utils.config_container import ConfigContainer
 
-__all__ = ["VerificationStatus", "VerificationTimeout", "Verifier"]
+__all__ = ["VerifyStatus", "VerifierTimeout", "Verifier"]
 
 
 @unique
-class VerificationStatus(Enum):
+class VerifyStatus(Enum):
     SATISFIED = auto()
     VIOLATED = auto()
     UNKNOWN = auto()
@@ -47,15 +49,25 @@ class VerificationStatus(Enum):
     def from_(val: TL):
         match val:
             case TL.TRUE:
-                return VerificationStatus.SATISFIED
+                return VerifyStatus.SATISFIED
             case TL.FALSE:
-                return VerificationStatus.VIOLATED
+                return VerifyStatus.VIOLATED
             case TL.UNKNOWN:
-                return VerificationStatus.UNKNOWN
+                return VerifyStatus.UNKNOWN
 
 
-class VerificationTimeout(Exception):
+@rust_enum.enum
+class BoundStatus:
+    SUCCESS = rust_enum.Case(lb=float | torch.Tensor, ub=float | torch.Tensor)
+    TIMEOUT = rust_enum.Case(lb=float | torch.Tensor, ub=float | torch.Tensor)
+
+
+class VerifierTimeout(Exception):
     pass
+
+
+_RUN_TL = TypeVar("_RUN_TL", bound=Function | Inequality | Expression | Function)
+_RUN_RET = TypeVar("_RUN_RET")
 
 
 class Verifier(ConfigContainer):
@@ -114,7 +126,7 @@ class Verifier(ConfigContainer):
         externals: dict[str, Callable | torch.Tensor],
         external_vars_domains: dict[str, InputSpace],
         external_vars_distributions: dict[str, ProbabilityDistribution],
-    ) -> tuple[VerificationStatus, dict[Function, tuple[torch.Tensor, torch.Tensor]]]:
+    ) -> tuple[VerifyStatus, dict[Function, tuple[torch.Tensor, torch.Tensor]]]:
         """
         Verifies a formula.
 
@@ -137,10 +149,126 @@ class Verifier(ConfigContainer):
          The verification witness is a set of bounds for functions in :code:`formula`
          that allows to prove/disprove :code:`formula`.
         """
+
+        def process_new_bounds(
+            best_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]],
+            formula_skeleton: Formula | Inequality,
+        ) -> VerifyStatus | None:
+            outcome = formula_skeleton.propagate_bounds(**best_bounds)
+            if outcome == TL.UNKNOWN:
+                return None
+            else:
+                return VerifyStatus.from_(outcome)
+
+        def handle_timeout(
+            best_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]],
+            formula_skeleton: Formula | Inequality,
+        ) -> VerifyStatus | None:
+            return None
+
+        return self._run(
+            formula,
+            externals,
+            external_vars_domains,
+            external_vars_distributions,
+            process_new_bounds,
+            handle_timeout,
+        )
+
+    def bound(
+        self,
+        expression: Expression | Function,
+        precision: float | None,
+        externals: dict[str, Callable | torch.Tensor],
+        external_vars_domains: dict[str, InputSpace],
+        external_vars_distributions: dict[str, ProbabilityDistribution],
+    ) -> tuple[BoundStatus, dict[Function, tuple[torch.Tensor, torch.Tensor]]]:
+        """
+        Computes bounds of a certain precision on an expression.
+
+        :param expression: The expression on which to compute bounds.
+        :param precision: The target difference between the upper and lower bound
+         of `expression`.
+         If `None`, refines the bounds until exceeding the timeout.
+         If no timeout is set and `precision` is None, `bound` will not terminate.
+        :param externals: Keyword arguments for evaluating the formula,
+         for example, neural networks that appear in the formula.
+         See :class:`ExternalFunction` and :class:`ExternalVariable`.
+        :param external_vars_domains: :class:`InputSpace` objects for all
+         external variables (:class:`ExternalVariable` objects and arguments of
+         :class:`ExternalFunction` objects)
+         appearing in :code:`formula`.
+         These are used for computing bounds on the external functions
+         (for example, neural networks) and probabilities in the formula.
+        :param external_vars_distributions: The distributions of
+         the external variables (:class:`ExternalVariable` objects and arguments of
+         :class:`ExternalFunction` objects)
+         appearing in :code:`formula`.
+         These are used for computing bounds on probabilities.
+        :return: The status of verification and a verification witness.
+         The verification witness is a set of bounds for functions in :code:`formula`
+         that allows to prove/disprove :code:`formula`.
+        """
+
+        def process_new_bounds(
+            best_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]],
+            expression_skeleton: Expression | Function,
+        ) -> BoundStatus | None:
+            lb, ub = expression_skeleton.propagate_bounds(**best_bounds)
+            print(f"[bound] New bounds: lb={lb}, ub={ub}")
+            if precision is not None and ub - lb <= precision:
+                return BoundStatus.SUCCESS(lb, ub)
+            else:
+                return None
+
+        def handle_timeout(
+            best_bounds: dict[str, tuple[torch.Tensor, torch.Tensor]],
+            expression_skeleton: Expression | Function,
+        ) -> BoundStatus | None:
+            lb, ub = expression_skeleton.propagate_bounds(**best_bounds)
+            return BoundStatus.TIMEOUT(lb, ub)
+
+        return self._run(
+            expression,
+            externals,
+            external_vars_domains,
+            external_vars_distributions,
+            process_new_bounds,
+            handle_timeout,
+        )
+
+    def _run(
+        self,
+        toplevel: _RUN_TL,
+        externals: dict[str, Callable | torch.Tensor],
+        external_vars_domains: dict[str, InputSpace],
+        external_vars_distributions: dict[str, ProbabilityDistribution],
+        process_new_bounds: Callable[
+            [
+                dict[str, tuple[torch.Tensor, torch.Tensor]],
+                _RUN_TL,
+            ],
+            _RUN_RET | None,
+        ],
+        handle_timeout: Callable[
+            [
+                dict[str, tuple[torch.Tensor, torch.Tensor]],
+                _RUN_TL,
+            ],
+            _RUN_RET | None,
+        ],
+    ) -> tuple[_RUN_RET, dict[Function, tuple[torch.Tensor, torch.Tensor]]]:
+        """
+        process_new_bounds and handle_timeout: Arguments are the current best bounds and
+        the skeleton of the toplevel formula/inequality/expression/function.
+        The return value is the result of the run if done or None.
+        For new_bounds, None means continue to run.
+        For handle_timeout, None means raising a timeout exception.
+        """
         # Replace all given externals by ExplicitFunctions/Constants
-        formula, make_explicit_subs = make_explicit(formula, **externals)
+        toplevel, make_explicit_subs = make_explicit(toplevel, **externals)
         # Replace compositions of functions by a single function computing the composition
-        formula, compose_subs = fuse_compositions(formula)
+        toplevel, compose_subs = fuse_compositions(toplevel)
 
         make_explicit_subs_reverse = {
             make_explicit_subs[term]: term for term in make_explicit_subs
@@ -152,7 +280,7 @@ class Verifier(ConfigContainer):
             orig = before_fuse_compose.replace(make_explicit_subs_reverse)
             return orig
 
-        requires_bounds = collect_requires_bounds(formula)
+        requires_bounds = collect_requires_bounds(toplevel)
         bounded_terms_substitution = {
             term: ExternalVariable(f"?{term}?") for term in requires_bounds
         }
@@ -162,7 +290,7 @@ class Verifier(ConfigContainer):
         term_subs = {
             str(term): var.name for term, var in bounded_terms_substitution.items()
         }
-        formula_skeleton = formula.replace(bounded_terms_substitution)
+        toplevel_skeleton = toplevel.replace(bounded_terms_substitution)
 
         worker_devices = self.worker_devices
         if worker_devices == "cuda":
@@ -236,13 +364,6 @@ class Verifier(ConfigContainer):
                 for worker_ in worker_processes:
                     worker_.terminate()
 
-            start_time = time()
-
-            def check_timeout():
-                if self.timeout is not None and time() > start_time + self.timeout:
-                    terminate_workers()
-                    raise VerificationTimeout()
-
             def new_result():
                 new_res = bounds_queue.get()
                 if isinstance(new_res, Exception):
@@ -254,25 +375,45 @@ class Verifier(ConfigContainer):
                     return new_res
 
             best_bounds = {}
+            start_time = time()
+
+            def reformat_best_bounds():
+                return {
+                    original_term(term): best_bounds[term_subs[str(term)]]
+                    for term in requires_bounds
+                }
+
+            def check_timeout() -> _RUN_RET | None:
+                if self.timeout is not None and time() > start_time + self.timeout:
+                    terminate_workers()
+
+                    outcome = None
+                    if len(best_bounds) == len(requires_bounds):
+                        outcome = handle_timeout(best_bounds, toplevel_skeleton)
+                    if outcome is None:
+                        raise VerifierTimeout()
+                    else:
+                        return outcome
+                else:
+                    return None
+
             # fetch bounds until we have a bound for every term in requires_bounds
             while len(best_bounds) < len(requires_bounds):
                 check_timeout()
                 term_key, new_bounds = new_result()
                 best_bounds[term_subs[term_key]] = new_bounds
 
-            outcome = formula_skeleton.propagate_bounds(**best_bounds)
-            while outcome == TL.UNKNOWN:
-                check_timeout()
+            outcome = process_new_bounds(best_bounds, toplevel_skeleton)
+            while outcome is None:
+                result = check_timeout()
+                if result is not None:
+                    return result, reformat_best_bounds()
                 term_key, new_bounds = new_result()
                 best_bounds[term_subs[term_key]] = new_bounds
-                outcome = formula_skeleton.propagate_bounds(**best_bounds)
+                outcome = process_new_bounds(best_bounds, toplevel_skeleton)
 
             terminate_workers()
-            best_bounds = {
-                original_term(term): best_bounds[term_subs[str(term)]]
-                for term in requires_bounds
-            }
-            return VerificationStatus.from_(outcome), best_bounds
+            return outcome, reformat_best_bounds()
         finally:
             if len(worker_processes) > 0:
                 for worker in worker_processes:
