@@ -1,4 +1,4 @@
-#  Copyright (c) 2024. David Boetius
+#  Copyright (c) 2024 David Boetius
 #  Licensed under the MIT License
 import argparse
 from time import time
@@ -13,11 +13,14 @@ from probspecs import (
 )
 from probspecs.bounds import ProbabilityBounds
 from probspecs.distributions import Uniform
-from experiments.utils import load_nnet
+from probspecs.utils.yaml import yaml
+from experiments.utils import load_nnet, get_acasxu_network
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("Quantify Violations - ACAS Xu")
+    parser = argparse.ArgumentParser(
+        "Quantify Violations of ACAS Xu Reluplex Safety Specifications"
+    )
     parser.add_argument(
         "-n",
         "--network",
@@ -31,7 +34,7 @@ if __name__ == "__main__":
         ),
         required=True,
         help="The ACAS Xu network number of the network to investigate. "
-        "The network is loaded from resouces/acasxu.",
+        "The network is loaded from resouces/acasxu or downloaded from the Reluplex GitHub repository.",
     )
     parser.add_argument(
         "-p",
@@ -48,17 +51,29 @@ if __name__ == "__main__":
         help="A timeout for computing bounds on the frequency of property violations "
         "in seconds.",
     )
+    parser.add_argument(
+        "--precision",
+        type=float,
+        default=1e-3,
+        help="A threshold for the precision of the computed bounds. This script stops once this threshold is reached.",
+    )
+    parser.add_argument(
+        "--probability-bounds-config",
+        default="{}",
+        help="A configuration for computing bounds. Can be a path to a YAML file "
+        "or a yaml string. Have a look at the ProbabilityBounds class for details "
+        "on which configurations are available.",
+    )
     args = parser.parse_args()
 
     net_split = args.network.split("_")
     if len(net_split) == 2:
         net_i1, net_i2 = net_split
-        net_name = f"ACASXU_run2a_{net_i1}_{net_i2}_batch_2000"
+        network, (input_lbs, input_ubs) = get_acasxu_network(net_i1, net_i2)
     else:
-        net_name = args.network
-    network, (input_lbs, input_ubs) = load_nnet(
-        Path("resources", "acasxu", net_name + ".nnet")
-    )
+        network, (input_lbs, input_ubs) = load_nnet(
+            Path("resources", "acasxu", args.network + ".nnet")
+        )
     input_space = TensorInputSpace(input_lbs, input_ubs)
 
     x = ExternalVariable("x")
@@ -140,7 +155,15 @@ if __name__ == "__main__":
     timeout = args.timeout
     if timeout is None:
         timeout = float("inf")
-    compute_bounds = ProbabilityBounds(batch_size=128, device="cpu")
+
+    if "{" in args.probability_bounds_config or "\n" in args.probability_bounds_config:
+        prob_bounds_config = args.probability_bounds_config
+    else:
+        prob_bounds_config = Path(args.probability_bounds_config)
+    prob_bounds_config = yaml.load(prob_bounds_config)
+    prob_bounds_config = {"batch_size": 512} | prob_bounds_config
+    compute_bounds = ProbabilityBounds(device="cpu", **prob_bounds_config)
+
     start_time = time()
     bounds_gen = compute_bounds.bound(
         p_violation,
@@ -153,4 +176,6 @@ if __name__ == "__main__":
         best_bounds = next(bounds_gen)
         lower, upper = best_bounds
         print(f"{lower:.6f} <= P(violation) <= {upper:.6f}")
+        if upper - lower <= args.precision:
+            break
     print(f"Finished.")

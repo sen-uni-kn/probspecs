@@ -1,10 +1,11 @@
+from .probability_distribution import ProbabilityDistribution
 from .as_integer import AsInteger
 from .bayesian_network import BayesianNetwork
 from .categorical import Categorical
 from .mixture import MixtureModel
 from .multivariate import MultivariateIndependent
 from .one_hot import CategoricalOneHot
-from .probability_distribution import ProbabilityDistribution
+from .point_distribution import PointDistribution
 from .uniform import Uniform
 from .univariate import (
     UnivariateContinuousDistribution,

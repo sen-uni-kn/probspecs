@@ -2,12 +2,50 @@
 #  Licensed under the MIT License
 import os
 import argparse
+from pathlib import Path
 
 import numpy as np
 import torch
 from torch import nn
+import requests
 
-from probspecs.population_models import Normalize, Denormalize, Identity
+from probspecs.population_models import Normalize, Denormalize
+
+
+def get_acasxu_network(
+    i1: int,
+    i2: int,
+    root="resources/acasxu",
+    base_url="https://raw.githubusercontent.com/guykatzz/ReluplexCav2017/60b482eec832c891cb59c0966c9821e40051c082/nnet/",
+) -> tuple[nn.Sequential, tuple[torch.Tensor, torch.Tensor]]:
+    """
+    Load an ACAS Xu network from the `root` directory.
+    Download the network from the Reluplex GitHub repository if necessary.
+    """
+    i1, i2 = int(i1), int(i2)
+    if i1 < 1 or i1 > 5:
+        raise ValueError("The first network index must be between 1 and 5")
+    if i2 < 1 or i2 > 9:
+        raise ValueError("The second network index must be between 1 and 9")
+
+    net_file = f"ACASXU_run2a_{i1}_{i2}_batch_2000.nnet"
+    root_dir = Path(root)
+    target_file = root_dir / net_file
+    if not target_file.exists():
+        url = base_url + net_file
+        print(f"Downloading ACAS Xu network {i1}, {i2} from {url}.")
+        result = requests.get(url)
+        if not result.ok:
+            raise ValueError(
+                f"Failed to download ACAS Xu network {i1}, {i2} from {url}."
+            )
+
+        root_dir.mkdir(exist_ok=True)
+        target_file.touch()
+        with open(target_file, "wb") as file:
+            file.write(result.content)
+
+    return load_nnet(target_file)
 
 
 @torch.no_grad()
