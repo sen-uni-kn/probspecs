@@ -171,6 +171,7 @@ if __name__ == "__main__":
         prob_bounds_config = Path(args.probability_bounds_config)
     prob_bounds_config = yaml.load(prob_bounds_config)
     prob_bounds_config = {"batch_size": 512} | prob_bounds_config
+    print("prob_bounds_config", prob_bounds_config)
     compute_bounds = ProbabilityBounds(device="cpu", **prob_bounds_config)
 
     start_time = time()
@@ -190,4 +191,5 @@ if __name__ == "__main__":
             break
     else:
         print(f"Timeout.")
-    print(f"Finished.")
+    runtime = time() - start_time
+    print(f"Finished. Runtime {runtime:.2f}s")
