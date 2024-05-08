@@ -14,6 +14,7 @@ import torch
 from torch import nn
 from torch.utils.data import random_split, DataLoader
 
+from experiments.mini_acs_income import MiniACSIncome
 
 if __name__ == "__main__":
     torch.manual_seed(962912072501243)
@@ -27,7 +28,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset",
         required=True,
-        choices=["Adult", "SouthGerman"],
+        choices=["Adult", "SouthGerman"] + [f"MiniACSIncome-{i}" for i in range(1, 11)],
         help="The dataset for which to train the network",
     )
     parser.add_argument(
@@ -136,22 +137,34 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    match args.dataset:
-        case "Adult":
+    match args.dataset.split("-"):
+        case ["Adult"]:
             train_set = Adult(root=".datasets", train=True, download=True)
             test_set = Adult(root=".datasets", train=False, download=True)
             num_classes = 2
             input_size = len(test_set.columns)
-            class_weights = torch.tensor((0.25, 0.75))
-        case "SouthGerman":
+        case ["SouthGerman"]:
             dataset = SouthGerman(root=".datasets", download=True)
             # create a 70%/30% split
             train_size = floor(0.7 * len(dataset))
             test_size = len(dataset) - train_size
-            train_set, test_set = random_split(dataset, (train_size, test_size), generator=rng)
+            train_set, test_set = random_split(
+                dataset, (train_size, test_size), generator=rng
+            )
             num_classes = 2
             input_size = len(dataset.columns)
-            class_weights = torch.tensor((0.66, 0.33))
+        case ["MiniACSIncome", size]:
+            dataset = MiniACSIncome(
+                root=".datasets", num_variables=int(size), download=True, normalize=True
+            )
+            # create a 70%/30% split
+            train_size = floor(0.7 * len(dataset))
+            test_size = len(dataset) - train_size
+            train_set, test_set = random_split(
+                dataset, (train_size, test_size), generator=rng
+            )
+            num_classes = 2
+            input_size = len(dataset.columns)
         case _:
             raise ValueError(f"Unknown dataset: {args.dataset}.")
 
@@ -181,8 +194,7 @@ if __name__ == "__main__":
         else:
             num_layers = trial.suggest_int("num_layers", 1, 4)
             layer_sizes = tuple(
-                trial.suggest_int(f"layer_size_{i}", 20, 1000)
-                for i in range(num_layers)
+                trial.suggest_int(f"layer_size_{i}", 2, 100) for i in range(num_layers)
             )
             return build_network(layer_sizes)
 
@@ -208,13 +220,17 @@ if __name__ == "__main__":
         )
 
         network = new_network(trial)
-        lr = choose_param("lr", lambda: trial.suggest_float("lr", 1e-6, 1.0))
-        beta1 = choose_param("beta1", lambda: trial.suggest_float("beta1", 0.5, 1.0))
-        beta2 = choose_param("beta2", lambda: trial.suggest_float("beta2", 0.5, 1.0))
-        weight_decay = choose_param("weight_decay", lambda: trial.suggest_float("weight_decay", 0.0, 1.0))
-        optimizer = torch.optim.Adam(network.parameters(), lr=lr, betas=(beta1, beta2), weight_decay=weight_decay)
+        lr = choose_param("lr", lambda: trial.suggest_float("lr", 1e-6, 0.1))
+        beta1 = choose_param("beta1", lambda: trial.suggest_float("beta1", 0.8, 1.0))
+        beta2 = choose_param("beta2", lambda: trial.suggest_float("beta2", 0.9, 1.0))
+        weight_decay = choose_param(
+            "weight_decay", lambda: trial.suggest_float("weight_decay", 0.0, 1.0)
+        )
+        optimizer = torch.optim.Adam(
+            network.parameters(), lr=lr, betas=(beta1, beta2), weight_decay=weight_decay
+        )
         lr_gamma = choose_param(
-            "lr_gamma", lambda: trial.suggest_float("lr_gamma", 0.1, 0.9)
+            "lr_gamma", lambda: trial.suggest_float("lr_gamma", 0.05, 0.99)
         )
         if args.lr_milestones is None:
             lr_milestone_1 = trial.suggest_int(
@@ -230,7 +246,7 @@ if __name__ == "__main__":
         lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer, milestones=lr_milestones_, gamma=lr_gamma
         )
-        loss_function = nn.CrossEntropyLoss(weight=class_weights)
+        loss_function = nn.CrossEntropyLoss()
 
         full_train_loader = DataLoader(train_set, batch_size=len(train_set))
         full_val_loader = DataLoader(val_set, batch_size=len(val_set))
@@ -295,9 +311,15 @@ if __name__ == "__main__":
                         f"{train_acc*100:4.2f}%/{val_acc*100:4.2f}%/{test_acc*100:4.2f}%"
                     )
                     if num_classes == 2:
-                        _, _, _, _, train_precision, train_recall = confusion_matrix(full_train_loader)
-                        _, _, _, _, val_precision, val_recall = confusion_matrix(full_val_loader)
-                        _, _, _, _, test_precision, test_recall = confusion_matrix(full_test_loader)
+                        _, _, _, _, train_precision, train_recall = confusion_matrix(
+                            full_train_loader
+                        )
+                        _, _, _, _, val_precision, val_recall = confusion_matrix(
+                            full_val_loader
+                        )
+                        _, _, _, _, test_precision, test_recall = confusion_matrix(
+                            full_test_loader
+                        )
                         log_string += (
                             f", precision (train/val/test): "
                             f"{train_precision*100:4.2f}%/{val_precision*100:4.2f}%/{test_precision*100:4.2f}%, "
@@ -344,6 +366,8 @@ if __name__ == "__main__":
             assert len(args.lr_milestones) == 2
             best_params["lr_milestone_1"] = args.lr_milestones[0]
             best_params["lr_milestone_2"] = args.lr_milestones[1]
+        if args.weight_decay is not None:
+            best_params["weight_decay"] = args.weight_decay
 
         if args.save_hyperparameters is not None:
             with open(args.save_hyperparameters, "wt") as param_file:

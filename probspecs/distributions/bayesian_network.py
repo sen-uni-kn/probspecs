@@ -965,9 +965,9 @@ class BayesianNetwork(ProbabilityDistribution):
                     )
 
         def __init__(self):
-            self.__nodes: OrderedDict[str, "BayesianNetwork.Factory.Node"] = (
-                OrderedDict()
-            )
+            self.__nodes: OrderedDict[
+                str, "BayesianNetwork.Factory.Node"
+            ] = OrderedDict()
             self.dtype = torch.double
 
         def new_node(self, name: str, replace=False) -> "BayesianNetwork.Factory.Node":
