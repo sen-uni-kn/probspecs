@@ -1,11 +1,15 @@
 #  Copyright (c) 2024. David Boetius
 #  Licensed under the MIT License
 import os
-import argparse
+from datetime import datetime
 from pathlib import Path
+import platform
 
 import numpy as np
 import torch
+import psutil
+import cpuinfo
+from GPUtil import GPUtil
 from torch import nn
 import requests
 
@@ -162,3 +166,64 @@ def load_nnet(
         input_minimums,
         input_maximums,
     )
+
+
+def log_machine_and_code_details():
+    """
+    Collects and prints relevant experiment statistics:
+     * time
+     * git commit
+     * platform details (includes operation system name)
+     * processor name
+     * installed memory
+     * current memory usage
+     * installed swap
+     * current swap usage
+     * number of GPus
+     * for each GPU: name, memory, memory usage.
+    """
+    # try to get the current git commit
+    # solution form https://stackoverflow.com/a/68215738/10550998
+    # by Naelson Douglas
+    git_folder = Path(".git")
+    if git_folder.exists():
+        head_name = (git_folder / "HEAD").read_text().split("\n")[0].split(" ")[-1]
+        commit = (git_folder / head_name).read_text().replace("\n", "")
+    else:
+        commit = "unknown"
+    stats = (
+        f"Setup Details\n"
+        f"----------------------------------------------------------------------\n"
+        f"time: {datetime.now()}"
+        f"code version: {commit}\n"
+        f"platform: {platform.platform(aliased=True)}\n"
+        f"CPU:\n"
+        f"  name: {cpuinfo.get_cpu_info()['brand_raw']}\n"
+        f"  physical cores: {psutil.cpu_count(logical=False)}\n"
+        f"  logical cores: {psutil.cpu_count(logical=True)}\n"
+    )
+    memory_stats = psutil.virtual_memory()
+    stats += (
+        f"memory:\n"
+        f"  total: {memory_stats.total / (1024 ** 3):.2f} GB\n"
+        f"  used: {memory_stats.percent}%\n"
+    )
+    swap_stats = psutil.swap_memory()
+    stats += (
+        f"swap:\n"
+        f"    total: {swap_stats.total / (1024 ** 3):.3f} GB\n"
+        f"    used: {swap_stats.percent}%\n"
+    )
+    gpus = GPUtil.getGPUs()
+    if len(gpus) == 0:
+        stats += "GPUs: 0\n"
+    else:
+        stats += f"GPUs: {len(gpus)}\n"
+        for gpu in gpus:
+            stats += (
+                f"GPU {gpu.id}:\n"
+                f"    name: {gpu.name}\n"
+                f"    total GPU memory: {gpu.memoryTotal} MB\n"
+                f"    used GPU memory: {100*gpu.memoryUsed/gpu.memoryTotal:.1f}%\n"
+            )
+    print(stats)
