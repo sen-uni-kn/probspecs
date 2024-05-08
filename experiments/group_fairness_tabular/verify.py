@@ -6,6 +6,7 @@ from time import time
 
 import torch
 
+from experiments.utils import log_machine_and_code_details
 from probspecs import (
     Verifier,
     prob,
@@ -67,6 +68,12 @@ if __name__ == "__main__":
         "on which configurations are available.",
     )
     args = parser.parse_args()
+
+    print("Running Experiment: Group Fairness")
+    print("=" * 100)
+    print("Command Line Arguments:")
+    print(args)
+    log_machine_and_code_details()
 
     match args.dataset:
         case "Adult":

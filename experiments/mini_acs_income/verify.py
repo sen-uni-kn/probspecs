@@ -8,6 +8,7 @@ from time import time
 
 import torch
 
+from experiments.utils import log_machine_and_code_details
 from probspecs import (
     Verifier,
     prob,
@@ -31,6 +32,13 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--network", default="network")
     parser.add_argument("--fairness-eps", default=0.2)
     parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="A timeout for computing bounds on the frequency of property violations "
+        "in seconds.",
+    )
+    parser.add_argument(
         "--probability-bounds-config",
         default="{}",
         help="A configuration for computing bounds. Can be a path to a YAML file "
@@ -43,6 +51,7 @@ if __name__ == "__main__":
     print("=" * 100)
     print("Command Line Arguments:")
     print(args)
+    log_machine_and_code_details()
 
     resource_dir = Path("resources/MiniACSIncome")
     input_distribution, input_space, pop_model_transform = torch.load(
@@ -102,6 +111,7 @@ if __name__ == "__main__":
     prob_bounds_config = {"batch_size": 512} | prob_bounds_config
     verifier = Verifier(
         worker_devices="cpu",
+        timeout=args.timeout,
         probability_bounds_config=prob_bounds_config,
     )
     start_time = time()

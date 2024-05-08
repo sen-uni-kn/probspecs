@@ -17,8 +17,7 @@ from probspecs import (
 from probspecs.bounds import ProbabilityBounds
 from probspecs.distributions import Uniform, PointDistribution, MultivariateIndependent
 from probspecs.utils.yaml import yaml
-from experiments.utils import get_acasxu_network
-
+from experiments.utils import get_acasxu_network, log_machine_and_code_details
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -84,6 +83,12 @@ if __name__ == "__main__":
         "on which configurations are available.",
     )
     args = parser.parse_args()
+
+    print("Running Experiment: ACAS Xu - Robustness")
+    print("=" * 100)
+    print("Command Line Arguments:")
+    print(args)
+    log_machine_and_code_details()
 
     net_i1, net_i2 = args.network.split("_")
     network, (input_lbs, input_ubs) = get_acasxu_network(net_i1, net_i2)
@@ -176,6 +181,9 @@ if __name__ == "__main__":
         lower, upper = best_bounds
         print(f"{lower:.6f} <= P(net(x) = {target}) <= {upper:.6f}")
         if upper - lower <= args.precision:
+            print(f"Precision Reached.")
             break
+    else:
+        print(f"Timeout.")
     runtime = time() - start_time
     print(f"Finished. Runtime {runtime:.2f}s")

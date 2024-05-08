@@ -14,8 +14,11 @@ from probspecs import (
 from probspecs.bounds import ProbabilityBounds
 from probspecs.distributions import Uniform
 from probspecs.utils.yaml import yaml
-from experiments.utils import load_nnet, get_acasxu_network
-
+from experiments.utils import (
+    load_nnet,
+    get_acasxu_network,
+    log_machine_and_code_details,
+)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -65,6 +68,12 @@ if __name__ == "__main__":
         "on which configurations are available.",
     )
     args = parser.parse_args()
+
+    print("Running Experiment: ACAS Xu - Safety")
+    print("=" * 100)
+    print("Command Line Arguments:")
+    print(args)
+    log_machine_and_code_details()
 
     net_split = args.network.split("_")
     if len(net_split) == 2:
@@ -177,5 +186,8 @@ if __name__ == "__main__":
         lower, upper = best_bounds
         print(f"{lower:.6f} <= P(violation) <= {upper:.6f}")
         if upper - lower <= args.precision:
+            print(f"Precision Reached.")
             break
+    else:
+        print(f"Timeout.")
     print(f"Finished.")

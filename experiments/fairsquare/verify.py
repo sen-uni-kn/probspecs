@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 from time import time
 
+from experiments.utils import log_machine_and_code_details
 from probspecs import Verifier, prob, compose, ExternalFunction, ExternalVariable
 from experiments.fairsquare.population_models import *
 from experiments.fairsquare.classifiers import *
@@ -31,6 +32,13 @@ if __name__ == "__main__":
     qual_group.add_argument("-n", "--no-qual", action="store_true")
     parser.add_argument("--fairness-eps", default=0.15)
     parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="A timeout for computing bounds on the frequency of property violations "
+        "in seconds.",
+    )
+    parser.add_argument(
         "--probability-bounds-config",
         default="{}",
         help="A configuration for computing bounds. Can be a path to a YAML file "
@@ -38,6 +46,12 @@ if __name__ == "__main__":
         "on which configurations are available.",
     )
     args = parser.parse_args()
+
+    print("Running Experiment: FairSquare")
+    print("=" * 100)
+    print("Command Line Arguments:")
+    print(args)
+    log_machine_and_code_details()
 
     match args.population_model:
         case "ind":
@@ -104,6 +118,7 @@ if __name__ == "__main__":
     prob_bounds_config = {"batch_size": 1024} | prob_bounds_config
     verifier = Verifier(
         worker_devices="cpu",
+        timeout=args.timeout,
         probability_bounds_config=prob_bounds_config,
     )
     start_time = time()
