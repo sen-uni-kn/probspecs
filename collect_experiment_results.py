@@ -98,7 +98,7 @@ def collect_verify(dir_):
     data.to_csv(data_file, index=False)
 
 
-bounds_re = re.compile(r"(?P<lb>\d+\.\d*) *<=.*<= *(?P<ub>\d+\.\d*)")
+bounds_re = re.compile(r"(?P<lb>-?\d+\.\d*) *<=.*<= *(?P<ub>-?\d+\.\d*)")
 
 
 def collect_bound(dir_):
