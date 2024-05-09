@@ -25,3 +25,11 @@ Now you are ready to run the experiments in this repository.
 You can also run the last two steps by running `bash -i install.sh` 
 from the root directory of this repository.
 
+## Experiments
+```bash
+python download_dataset.py  # so that downloading doesn't hamper with timeouts
+# ./train_networks.sh  # Optional, if you want to recreate the networks
+# TODO: pop models
+./run_experiments.sh
+```
+For reproducing the experiments using the FairSquare algorithm, see `fairsquare/README.md`.
