@@ -39,11 +39,11 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    print("Running Experiment: MiniACSIncome - Test all Discrete Values")
+    print("Running Experiment: MiniACSIncome - Enumerate the Discrete Values")
     print("=" * 100)
     print("Command Line Arguments:")
     print(args)
-    # log_machine_and_code_details()
+    log_machine_and_code_details()
 
     dataset = MiniACSIncome(
         root=".datasets", num_variables=args.num_variables, download=True
