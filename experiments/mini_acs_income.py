@@ -22,13 +22,13 @@ class MiniACSIncome(Dataset):
 
     Sizes:
      - 1 features: 2 inputs, 2 effective values
-     - 2 features: 10 inputs, 10 total discrete values
-     - 3 features: 34 inputs, 34 total discrete values
-     - 4 features: 35 inputs, 134 total discrete values
-     - 5 features: 40 inputs, 139 total discrete values
-     - 6 features: 49 inputs, 148 total discrete values
-     - 7 features: 67 inputs, 166 total discrete values
-     - 8 features: 68 inputs, 266 total discrete values
+     - 2 features: 10 inputs, * 8 = 16 total discrete values
+     - 3 features: 34 inputs, * 24 = 382 total discrete values
+     - 4 features: 35 inputs, * 99 = 38016 total discrete values
+     - 5 features: 40 inputs, * 5 = 190080 total discrete values
+     - 6 features: 49 inputs, * 9 = 1710720 total discrete values
+     - 7 features: 67 inputs, * 18 = 30792960 total discrete values
+     - 8 features: 68 inputs, * 79 = 2432643840 total discrete values
 
     [1]: Frances Ding, Moritz Hardt, John Miller, Ludwig Schmidt:
     Retiring Adult: New Datasets for Fair Machine Learning. NeurIPS 2021: 6478-6490
