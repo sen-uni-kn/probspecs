@@ -1,6 +1,7 @@
 [submodule "auto_LiRPA"]
 	path = auto_LiRPA
 	url = https://github.com/Verified-Intelligence/auto_LiRPA.git
-[submodule "--force"]
+[submodule "fairsquare"]
 	path = fairsquare
 	url = https://github.com/cherrywoods/fairsquare.git
+
