@@ -67,14 +67,52 @@ _classifier_input_space = TabularInputSpace(
 )
 
 
+# Here, we choose the lower and upper bounds such that the cdf of all
+# distributions is 0.0/1.0 to machine precision
+_unrealistic_classifier_input_space = TabularInputSpace(
+    attributes=(
+        "age",
+        "education_num",
+        "sex",
+        "capital_gain",
+        "capital_loss",
+        "hours_per_week",
+    ),
+    data_types={
+        "age": AttrT.CONTINUOUS,
+        "education_num": AttrT.CONTINUOUS,
+        "sex": AttrT.INTEGER,
+        "capital_gain": AttrT.CONTINUOUS,
+        "capital_loss": AttrT.CONTINUOUS,
+        "hours_per_week": AttrT.CONTINUOUS,
+    },
+    continuous_ranges={
+        "age": (-500.0, 200.0),
+        "education_num": (-100.0, 40.0),
+        "capital_gain": (-1000000.0, 10000.0),
+        "capital_loss": (-20000.0, 5000.0),
+        "hours_per_week": (-500.0, 200.0),
+    },
+    integer_ranges={"sex": (0, 1)},
+    categorical_values={},
+)
+
+
 class IndependentPopulationModel:
     """
     A population model composed from independent variables.
     """
 
+    def __init__(self, realistic=True):
+        self.realistic = realistic
+
     @property
     def input_space(self) -> InputSpace:
-        return _classifier_input_space
+        return (
+            _classifier_input_space
+            if self.realistic
+            else _unrealistic_classifier_input_space
+        )
 
     @property
     def probability_distribution(self) -> ProbabilityDistribution:
@@ -522,37 +560,6 @@ class BayesianNetworkPopulationModel:
     @property
     def population_model(self) -> Optional[torch.nn.Module]:
         return self.__pop_model
-
-
-# Here, we choose the lower and upper bounds such that the cdf of all
-# distributions is 0.0/1.0 to machine precision
-_unrealistic_classifier_input_space = TabularInputSpace(
-    attributes=(
-        "age",
-        "education_num",
-        "sex",
-        "capital_gain",
-        "capital_loss",
-        "hours_per_week",
-    ),
-    data_types={
-        "age": AttrT.CONTINUOUS,
-        "education_num": AttrT.CONTINUOUS,
-        "sex": AttrT.INTEGER,
-        "capital_gain": AttrT.CONTINUOUS,
-        "capital_loss": AttrT.CONTINUOUS,
-        "hours_per_week": AttrT.CONTINUOUS,
-    },
-    continuous_ranges={
-        "age": (-500.0, 200.0),
-        "education_num": (-100.0, 40.0),
-        "capital_gain": (-1000000.0, 10000.0),
-        "capital_loss": (-20000.0, 5000.0),
-        "hours_per_week": (-500.0, 200.0),
-    },
-    integer_ranges={"sex": (0, 1)},
-    categorical_values={},
-)
 
 
 def _get_explicit_bayesian_network(realistic: bool = True):
