@@ -10,7 +10,7 @@ fi
 OUT_DIR="$HERE/../output/$TIMESTAMP/acasxu/safety"
 mkdir -p "$OUT_DIR"
 
-TIMEOUT=1
+TIMEOUT=900
 PRECISION=0.01
 for net in "2_1" "2_2" "2_3" "2_4" "2_5" "2_6" "2_7" "2_8" "2_9"
 do
@@ -37,7 +37,7 @@ done
 OUT_DIR="$HERE/../output/$TIMESTAMP/acasxu/robustness"
 mkdir -p "$OUT_DIR"
 
-TIMEOUT=1
+TIMEOUT=900
 PRECISION=0.001
 for label in {0..4}
 do
