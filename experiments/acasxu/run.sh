@@ -17,21 +17,21 @@ do
   python -u "$HERE/safety.py" \
   --network "$net" --property 2 --timeout "$TIMEOUT" --precision "$PRECISION" \
   "$@" \
-  | tee "$OUT_DIR/${net}_property2.txt"
+  | tee "$OUT_DIR/${net}_property2.log"
 done
 for net in "1_9" "net_1_9_property_7_partially_repaired_1" "net_1_9_property_7_partially_repaired_2" "net_1_9_property_7_partially_repaired_3"
 do
   python -u "$HERE/safety.py" \
   --network "$net" --property 7 --timeout "$TIMEOUT" --precision "$PRECISION" \
   "$@" \
-  | tee "$OUT_DIR/${net}_property7.txt"
+  | tee "$OUT_DIR/${net}_property7.log"
 done
 for net in "2_9" "net_2_9_property_8_unknown"
 do
   python -u "$HERE/safety.py" \
   --network "$net" --property 8 --timeout "$TIMEOUT" --precision "$PRECISION" \
   "$@" \
-  | tee "$OUT_DIR/${net}_property8.txt"
+  | tee "$OUT_DIR/${net}_property8.log"
 done
 
 OUT_DIR="$HERE/../output/$TIMESTAMP/acasxu/robustness"
@@ -49,7 +49,7 @@ do
       --network "1_1" --label "$label" --target "$target" --input "$i" \
       --timeout "$TIMEOUT" --precision "$PRECISION" \
       "$@" \
-      | tee "$OUT_DIR/1_1_${label}_to_${target}_${i}.txt"
+      | tee "$OUT_DIR/1_1_${label}_to_${target}_${i}.log"
     done
   done
 done

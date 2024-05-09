@@ -11,7 +11,7 @@ OUT_DIR="$HERE/../output/$TIMESTAMP/mini_acs_income"
 mkdir -p "$OUT_DIR"
 
 TIMEOUT=3600
-HARD_TIMEOUT=3600s  # 60 seconds for setup, etc (very generous)
+HARD_TIMEOUT=3660s  # 60 seconds for setup, etc (very generous)
 
 for nv in {1..8}
 do

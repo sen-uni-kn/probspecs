@@ -192,4 +192,4 @@ if __name__ == "__main__":
     else:
         print(f"Timeout.")
     runtime = time() - start_time
-    print(f"Finished. Runtime {runtime:.2f}s")
+    print(f"Finished. Runtime: {runtime:.2f}")
