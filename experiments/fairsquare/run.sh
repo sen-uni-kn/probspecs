@@ -13,7 +13,7 @@ mkdir -p "$OUT_DIR"
 TIMEOUT=900
 HARD_TIMEOUT="960s"  # 60 secs for setup, etc (very generous)
 
-for pop_model in "ind" "BN" "BNc" "eBN" "eBNc"
+for pop_model in "ind" "eBN" "rBN" "eBNc" "rBNc"
 do
   for classifier in "NN_V2H1" "NN_V2H2" "NN_V3H2"
   do

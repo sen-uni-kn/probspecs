@@ -524,7 +524,43 @@ class BayesianNetworkPopulationModel:
         return self.__pop_model
 
 
-def _get_explicit_bayesian_network():
+# Here, we choose the lower and upper bounds such that the cdf of all
+# distributions is 0.0/1.0 to machine precision
+_unrealistic_classifier_input_space = TabularInputSpace(
+    attributes=(
+        "age",
+        "education_num",
+        "sex",
+        "capital_gain",
+        "capital_loss",
+        "hours_per_week",
+    ),
+    data_types={
+        "age": AttrT.CONTINUOUS,
+        "education_num": AttrT.CONTINUOUS,
+        "sex": AttrT.INTEGER,
+        "capital_gain": AttrT.CONTINUOUS,
+        "capital_loss": AttrT.CONTINUOUS,
+        "hours_per_week": AttrT.CONTINUOUS,
+    },
+    continuous_ranges={
+        "age": (-500.0, 200.0),
+        "education_num": (-100.0, 40.0),
+        "capital_gain": (-1000000.0, 10000.0),
+        "capital_loss": (-20000.0, 5000.0),
+        "hours_per_week": (-500.0, 200.0),
+    },
+    integer_ranges={"sex": (0, 1)},
+    categorical_values={},
+)
+
+
+def _get_explicit_bayesian_network(realistic: bool = True):
+    if realistic:
+        in_space = _classifier_input_space
+    else:
+        in_space = _unrealistic_classifier_input_space
+
     bn_factory = BayesianNetwork.Factory()
     sex = bn_factory.new_node("sex")
     sex.discrete_event_space([0.0], [1.0])
@@ -532,9 +568,7 @@ def _get_explicit_bayesian_network():
 
     capital_gain = bn_factory.new_node("capital_gain")
     capital_gain.add_parent(sex)
-    capital_gain_min, capital_gain_max = _classifier_input_space.attribute_bounds(
-        "capital_gain"
-    )
+    capital_gain_min, capital_gain_max = in_space.attribute_bounds("capital_gain")
     capital_gain.continuous_event_space(capital_gain_min, capital_gain_max)
     # sex=0
     loc = 568.4105
@@ -554,7 +588,7 @@ def _get_explicit_bayesian_network():
     def make_node(var, case1, case2, case3, case4):
         node = bn_factory.new_node(var)
         node.set_parents(sex, capital_gain)
-        min_, max_ = _classifier_input_space.attribute_bounds(var)
+        min_, max_ = in_space.attribute_bounds(var)
         node.continuous_event_space(min_, max_)
 
         # case1: sex=0, capital_gain < 7298.0
@@ -620,20 +654,38 @@ def _get_explicit_bayesian_network():
     return bn_factory.create()
 
 
-_explicit_bayesian_network = _get_explicit_bayesian_network()
+_explicit_bayesian_network = _get_explicit_bayesian_network(realistic=False)
+_realistic_bayesian_network = _get_explicit_bayesian_network()
 
 
 class ExplicitBayesianNetworkPopulationModel:
-    def __init__(self, integrity_constraint: bool = False, clip_outputs: bool = False):
+    def __init__(
+        self,
+        realistic: bool = True,
+        integrity_constraint: bool = False,
+        clip_outputs: bool = False,
+    ):
+        """
+        :param realistic: Use classifier input bounds.
+        """
+        self.realistic = realistic
         self.__transform = _IntegrityConstraint(integrity_constraint, clip_outputs)
 
     @property
     def input_space(self) -> InputSpace:
-        return _classifier_input_space
+        return (
+            _classifier_input_space
+            if self.realistic
+            else _unrealistic_classifier_input_space
+        )
 
     @property
     def probability_distribution(self) -> ProbabilityDistribution:
-        return _explicit_bayesian_network
+        return (
+            _realistic_bayesian_network
+            if self.realistic
+            else _explicit_bayesian_network
+        )
 
     @property
     def population_model(self) -> Optional[torch.nn.Module]:

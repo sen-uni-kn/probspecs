@@ -16,13 +16,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "-p",
         "--population-model",
-        choices=("ind", "BN", "BNc", "BNcc", "eBN", "eBNc"),
+        choices=("ind", "eBN", "eBNc", "rBN", "rBNc", "BN", "BNc", "BNcc"),
         required=True,
-        help="The population model. ind: independent, BN: Bayesian network, BNc: Bayesian network with "
-        "integrity constraint, BNcc: Bayesian network with integrity constraint and clipping, "
-        "eBN: Bayesian network encoded as probability distribution and not as input transformation, "
-        "eBNc: Bayesian network as probability distribution with integrity constraint. "
-        "The eBNs only produce in-range (clipped) outputs.",
+        help="The population model. "
+        "ind: independent, "
+        "eBN: the FairSquare Bayesian network, encoded as a probability distribution, "
+        "with unrealistic bounds (age < 0 allowed), "
+        "eBNc: eBN with an integrity constraint."
+        "rBN: the FairSquare Bayesian network, encoded as a probability distribution, "
+        "with realistic bounds (age < 0 disallowed), "
+        "rBNc: rBN with an integrity constraint."
+        "BN: Bayesian network encoded as independent distributions "
+        "and an input transformation, as in FairSquare, "
+        "BNc: BN with integrity constraint"
+        "BNcc: BNc with additional clipping, ",
     )
     parser.add_argument(
         "-c", "--classifier", choices=("NN_V2H1", "NN_V2H2", "NN_V3H2"), required=True
@@ -63,10 +70,16 @@ if __name__ == "__main__":
         case "BNcc":
             pop_model = BayesianNetworkPopulationModel(True, True)
         case "eBN":
-            pop_model = ExplicitBayesianNetworkPopulationModel()
+            pop_model = ExplicitBayesianNetworkPopulationModel(realistic=False)
         case "eBNc":
             pop_model = ExplicitBayesianNetworkPopulationModel(
-                integrity_constraint=True
+                realistic=False, integrity_constraint=True
+            )
+        case "rBN":
+            pop_model = ExplicitBayesianNetworkPopulationModel(realistic=True)
+        case "rBNc":
+            pop_model = ExplicitBayesianNetworkPopulationModel(
+                realistic=True, integrity_constraint=True
             )
         case _:
             raise ValueError()
