@@ -12,15 +12,12 @@ mkdir -p "$OUT_DIR"
 
 TIMEOUT=900
 PRECISION=0.01
-for i1 in {2..5}
+for i2 in {1..9}
 do
-  for i2 in {1..9}
-  do
-    python -u "$HERE/safety.py" \
-    --network "${i1}_${i2}" --property 2 --timeout "$TIMEOUT" --precision "$PRECISION" \
-    "$@" \
-    | tee "$OUT_DIR/property2_${i1}_${i2}.log"
-  done
+  python -u "$HERE/safety.py" \
+  --network "$2_${i2}" --property 2 --timeout "$TIMEOUT" --precision "$PRECISION" \
+  "$@" \
+  | tee "$OUT_DIR/property2_2_${i2}.log"
 done
 python -u "$HERE/safety.py" \
 --network "1_9" --property 7 --timeout "$TIMEOUT" --precision "$PRECISION" \
