@@ -34,6 +34,25 @@ python -u "$HERE/safety.py" \
 OUT_DIR="$HERE/../output/$TIMESTAMP/acasxu/robustness"
 mkdir -p "$OUT_DIR"
 
+# Comparison with eProVe
+OUT_DIR="$HERE/../output/$TIMESTAMP/acasxu/safety_less_precise"
+mkdir -p "$OUT_DIR"
+
+TIMEOUT=45  # median runtime of eProVe
+for i1 in {2..5}
+do
+  for i2 in {1..9}
+  do
+    python -u "$HERE/safety.py" \
+    --network "${i1}_${i2}" --property 2 --timeout "$TIMEOUT" \
+    "$@" \
+    | tee "$OUT_DIR/property2_${i1}_${i2}.log"
+  done
+done
+
+OUT_DIR="$HERE/../output/$TIMESTAMP/acasxu/robustness"
+mkdir -p "$OUT_DIR"
+
 TIMEOUT=900
 PRECISION=0.001
 for label in {0..4}
