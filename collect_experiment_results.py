@@ -63,11 +63,11 @@ def get_instance_name(dir_, file_name):
                     "Input": int(input_i),
                 }
             elif "property" in file_name:
-                # example: 2_1_property2.log
-                # example: netABC_property100.log
-                property_i = file_name.rindex("property")
-                network = file_name[: property_i - 1]  # there is a _ before property
-                prop, _ = file_name[property_i + len("property") :].split(".")
+                # example: property2_2_1.log
+                # example: property100_netABC.log
+                underscore_i = file_name.index("_")
+                prop = file_name[:underscore_i]
+                network, _ = file_name[underscore_i + 1 :].split(".")
                 return {"Network": network, "Property": prop}
     raise ValueError(f"Unknown experiment: {dir_}.")
 
@@ -151,6 +151,10 @@ if __name__ == "__main__":
             case "acasxu":
                 if (subdir / "safety").exists():
                     collect_bound(subdir / "safety")
+                if (subdir / "safety_less_precise").exists():
+                    collect_bound(subdir / "safety_less_precise")
+                if (subdir / "safety_more_precise").exists():
+                    collect_bound(subdir / "safety_more_precise")
                 if (subdir / "robustness").exists():
                     collect_bound(subdir / "robustness")
             case _:

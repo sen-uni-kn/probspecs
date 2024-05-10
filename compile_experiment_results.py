@@ -72,6 +72,11 @@ if __name__ == "__main__":
         "rBN": "Bayes Net 1 clipped",
         "rBNc": "Bayes Net 2 clipped",
     }
+    is_fair_lookup = {
+        "True": r"\exsuccess{}",
+        "False": r"\exfailure{}",
+        "Unknown": r"\exunknown{}",
+    }
     fairsquare_df.to_latex(
         out_file,
         columns=["Qualified", "Network", "Population Model", "Runtime", "Fair"],
@@ -81,13 +86,17 @@ if __name__ == "__main__":
             "Qualified": lambda q: "yes" if q else " no",
             "Network": lambda n: network_name_lookup[n],
             "Population Model": lambda p: pop_model_name_lookup[p],
-            "Fair": lambda f: "\exsuccess{}" if f else "\exfailure{}",
+            "Fair": lambda f: is_fair_lookup[f],
             "Runtime": lambda r: f"{float(r):6.1f}" if r != "TO" else "    TO",
         },
     )
 
     # ACAS Xu Safety Tables
-    for suffix, out_suffix in (("", ""), ("_less_precise", "LessPrecise")):
+    for suffix, out_suffix in (
+        ("", ""),
+        ("_less_precise", "LessPrecise"),
+        ("_more_precise", "MorePrecise"),
+    ):
         safety_subdir = experiment_directory / "acasxu" / ("safety" + suffix)
         if not safety_subdir.exists():
             continue
@@ -124,7 +133,9 @@ if __name__ == "__main__":
             for i1 in range(1, 6)
             for i2 in range(1, 10)
         }
-        property_lookup = {i: rf"$\varphi_{{{i}}}$" for i in range(1, 11)}
+        property_lookup = {i: rf"$\varphi_{{{i}}}$" for i in range(1, 11)} | {
+            f"property{i}": rf"$\varphi_{{{i}}}$" for i in range(1, 11)
+        }
         safety_df.to_latex(
             out_file,
             columns=[
