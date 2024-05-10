@@ -82,6 +82,9 @@ if __name__ == "__main__":
         "or a yaml string. Have a look at the ProbabilityBounds class for details "
         "on which configurations are available.",
     )
+    parser.add_argument(
+        "--log", action="store_true", help="Whether to print progress messages."
+    )
     args = parser.parse_args()
 
     print("Running Experiment: ACAS Xu - Robustness")
@@ -165,9 +168,10 @@ if __name__ == "__main__":
     else:
         prob_bounds_config = Path(args.probability_bounds_config)
     prob_bounds_config = yaml.load(prob_bounds_config)
-    prob_bounds_config = {"batch_size": 512} | prob_bounds_config
+    prob_bounds_config = {"batch_size": 512, "log": args.log} | prob_bounds_config
     compute_bounds = ProbabilityBounds(device="cpu", **prob_bounds_config)
 
+    print("Starting Bound Computation.")
     start_time = time()
     bounds_gen = compute_bounds.bound(
         p_target,
@@ -176,14 +180,18 @@ if __name__ == "__main__":
         {"x": input_distribution},
     )
     best_bounds = None
+    lower, upper = -float("inf"), float("inf")
     while (time() - start_time) < timeout:
         best_bounds = next(bounds_gen)
         lower, upper = best_bounds
-        print(f"{lower:.6f} <= P(net(x) = {target}) <= {upper:.6f}")
+        if args.log:
+            print(f"{lower:.6f} <= P(net(x) = {target}) <= {upper:.6f}")
         if upper - lower <= args.precision:
+            print(f"{lower:.6f} <= P(net(x) = {target}) <= {upper:.6f}")
             print(f"Precision Reached.")
             break
     else:
+        print(f"{lower:.6f} <= P(net(x) = {target}) <= {upper:.6f}")
         print(f"Timeout.")
     runtime = time() - start_time
     print(f"Finished. Runtime: {runtime:.4f}s")

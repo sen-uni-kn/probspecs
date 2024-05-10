@@ -80,6 +80,7 @@ class Verifier(ConfigContainer):
         worker_devices: tuple[str | torch.device, ...] | str | None = "cuda",
         parallel: bool = True,
         timeout: float | None = None,
+        log: bool = True,
         probability_bounds_config: dict = frozendict(),
         network_bounds_config: dict = frozendict(),
     ):
@@ -101,11 +102,13 @@ class Verifier(ConfigContainer):
         :param probability_bounds_config: Configurations for computing
          probability bounds.
          See :code:`ProbabilityBounds`.
+        :param log: Whether to print progress messages.
         """
         super().__init__(
             worker_devices=worker_devices,
             parallel=parallel,
             timeout=timeout,
+            log=log,
             probability_bounds_config=probability_bounds_config,
             network_bounds_config=network_bounds_config,
         )
@@ -115,6 +118,7 @@ class Verifier(ConfigContainer):
             "worker_devices",
             "parallel",
             "timeout",
+            "log",
             "probability_bounds_config",
             "network_bounds_config",
         }
@@ -215,7 +219,8 @@ class Verifier(ConfigContainer):
             expression_skeleton: Expression | Function,
         ) -> BoundStatus | None:
             lb, ub = expression_skeleton.propagate_bounds(**best_bounds)
-            print(f"[bound] New bounds: lb={lb}, ub={ub}")
+            if self.log:
+                print(f"[bound] New bounds: lb={lb}, ub={ub}")
             if precision is not None and ub - lb <= precision:
                 return BoundStatus.SUCCESS(lb, ub)
             else:

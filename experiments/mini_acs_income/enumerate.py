@@ -37,6 +37,9 @@ if __name__ == "__main__":
         help="A timeout for computing bounds on the frequency of property violations "
         "in seconds.",
     )
+    parser.add_argument(
+        "--log", action="store_true", help="Whether to print progress messages."
+    )
     args = parser.parse_args()
 
     print("Running Experiment: MiniACSIncome - Enumerate the Discrete Values")
@@ -154,17 +157,18 @@ if __name__ == "__main__":
             ),
             "P(high income | male)": (p_high_given_male_lb, p_high_income_male_ub),
         }
-        print(
-            f"{p_high_given_female_lb:.4f}"
-            f" <= P(high income | female) <= "
-            f"{p_high_given_female_ub:.4f}"
-        )
-        print(
-            f"{p_high_given_male_lb:.4f}"
-            f" <= P(high income | male) <= "
-            f"{p_high_given_male_ub:.4f}"
-        )
-        print(f"{lb:.4f} <= ratio <= {ub:.4f}")
+        if args.log:
+            print(
+                f"{p_high_given_female_lb:.4f}"
+                f" <= P(high income | female) <= "
+                f"{p_high_given_female_ub:.4f}"
+            )
+            print(
+                f"{p_high_given_male_lb:.4f}"
+                f" <= P(high income | male) <= "
+                f"{p_high_given_male_ub:.4f}"
+            )
+            print(f"{lb:.4f} <= ratio <= {ub:.4f}")
         if lb >= 1 - args.fairness_eps:
             verification_status = VerifyStatus.SATISFIED
             break

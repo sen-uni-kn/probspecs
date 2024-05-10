@@ -53,6 +53,9 @@ if __name__ == "__main__":
         "or a yaml string. Have a look at the ProbabilityBounds class for details "
         "on which configurations are available.",
     )
+    parser.add_argument(
+        "--log", action="store_true", help="Whether to print progress messages."
+    )
     args = parser.parse_args()
 
     print("Running Experiment: FairSquare")
@@ -131,12 +134,15 @@ if __name__ == "__main__":
     else:
         prob_bounds_config = Path(args.probability_bounds_config)
     prob_bounds_config = yaml.load(prob_bounds_config)
-    prob_bounds_config = {"batch_size": 1024} | prob_bounds_config
+    prob_bounds_config = {"batch_size": 1024, "log": args.log} | prob_bounds_config
     verifier = Verifier(
         worker_devices="cpu",
         timeout=args.timeout,
+        log=args.log,
         probability_bounds_config=prob_bounds_config,
     )
+
+    print("Starting Verification")
     start_time = time()
     verification_status, probability_bounds = verifier.verify(
         is_fair,

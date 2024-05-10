@@ -144,6 +144,7 @@ class ProbabilityBounds(Named, ConfigContainer):
         auto_lirpa_ops: dict = frozendict(),
         config_scheduler: Optional["ProbabilityBounds.ConfigSchedule"] = None,
         device: str | torch.device | None = None,
+        log: bool = True,
     ):
         """
         Creates a new :code:`ProbabilityBounds` instance with the given configuration.
@@ -172,6 +173,7 @@ class ProbabilityBounds(Named, ConfigContainer):
          bounds.
         :param device: The device to compute on.
          If None, the tensors remain on the device they already reside on.
+        :param log: Whether to print progress messages.
         """
         # Set the default split heuristic params if not given.
         split_heuristic_params = {
@@ -188,6 +190,7 @@ class ProbabilityBounds(Named, ConfigContainer):
             auto_lirpa_ops=auto_lirpa_ops,
             config_scheduler=config_scheduler,
             device=device,
+            log=log,
         )
 
     config_keys = frozenset(
@@ -200,6 +203,7 @@ class ProbabilityBounds(Named, ConfigContainer):
             "auto_lirpa_ops",
             "config_scheduler",
             "device",
+            "log",
         }
     )
 
@@ -393,11 +397,12 @@ class ProbabilityBounds(Named, ConfigContainer):
         # Note that the total probability may be < 1.0
         prob_ub = torch.sum(branches.probability_mass)
 
-        print(
-            f"[{self.name}]\n"
-            f"Computing bounds on {probability}.\n"
-            f"Config {self.config}\n" + ("-" * 100)
-        )
+        if self.log:
+            print(
+                f"[{self.name}]\n"
+                f"Computing bounds on {probability}.\n"
+                f"Config {self.config}\n" + ("-" * 100)
+            )
         iteration = 0
         while True:
             # 0. Remove branches where subj is certainly satisfied or certainly violated.
@@ -407,7 +412,8 @@ class ProbabilityBounds(Named, ConfigContainer):
             prob_ub -= torch.sum(certainly_viol_mask * branches.probability_mass)
             branches.drop(certainly_sat_mask | certainly_viol_mask)
 
-            print(f"[{self.name}] New bounds: lb={prob_lb}, ub={prob_ub}")
+            if self.log:
+                print(f"[{self.name}] New bounds: lb={prob_lb}, ub={prob_ub}")
             yield (prob_lb, prob_ub)
 
             if self.config_scheduler is not None:
