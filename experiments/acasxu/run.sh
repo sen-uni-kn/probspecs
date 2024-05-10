@@ -15,7 +15,7 @@ PRECISION=0.01
 for i2 in {1..9}
 do
   python -u "$HERE/safety.py" \
-  --network "$2_${i2}" --property 2 --timeout "$TIMEOUT" --precision "$PRECISION" \
+  --network "2_${i2}" --property 2 --timeout "$TIMEOUT" --precision "$PRECISION" \
   "$@" \
   | tee "$OUT_DIR/property2_2_${i2}.log"
 done
