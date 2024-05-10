@@ -28,6 +28,17 @@ python -u "$HERE/safety.py" \
 "$@" \
 | tee "$OUT_DIR/property8_2_9.log"
 
+# Comparison with ProVe_SLR
+TIMEOUT=14400  # 4h
+PRECISION=0.0001
+for net in "4_3" "4_9" "5_8"
+do
+  python -u "$HERE/safety.py" \
+  --network "$net" --property 2 --timeout "$TIMEOUT" --precision "$PRECISION" \
+  "$@" \
+  | tee "$OUT_DIR/property2_$net.log"
+done
+
 OUT_DIR="$HERE/../output/$TIMESTAMP/acasxu/robustness"
 mkdir -p "$OUT_DIR"
 
