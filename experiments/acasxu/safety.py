@@ -28,7 +28,10 @@ if __name__ == "__main__":
         "-n",
         "--network",
         choices=("1_9", "5_3")
-        + tuple(f"2_{i}" for i in range(10))
+        + tuple(f"2_{i}" for i in range(1, 10))
+        + tuple(f"3_{i}" for i in range(1, 10))
+        + tuple(f"4_{i}" for i in range(1, 10))
+        + tuple(f"5_{i}" for i in range(1, 10))
         + (
             "net_1_9_property_7_partially_repaired_1",
             "net_1_9_property_7_partially_repaired_2",

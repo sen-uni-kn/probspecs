@@ -12,27 +12,24 @@ mkdir -p "$OUT_DIR"
 
 TIMEOUT=900
 PRECISION=0.01
-for net in "2_1" "2_2" "2_3" "2_4" "2_5" "2_6" "2_7" "2_8" "2_9"
+for i1 in {2..5}
 do
-  python -u "$HERE/safety.py" \
-  --network "$net" --property 2 --timeout "$TIMEOUT" --precision "$PRECISION" \
-  "$@" \
-  | tee "$OUT_DIR/${net}_property2.log"
+  for i2 in {1..9}
+  do
+    python -u "$HERE/safety.py" \
+    --network "${i1}_${i2}" --property 2 --timeout "$TIMEOUT" --precision "$PRECISION" \
+    "$@" \
+    | tee "$OUT_DIR/property2_${i1}_${i2}.log"
+  done
 done
-for net in "1_9" "net_1_9_property_7_partially_repaired_1" "net_1_9_property_7_partially_repaired_2" "net_1_9_property_7_partially_repaired_3"
-do
-  python -u "$HERE/safety.py" \
-  --network "$net" --property 7 --timeout "$TIMEOUT" --precision "$PRECISION" \
-  "$@" \
-  | tee "$OUT_DIR/${net}_property7.log"
-done
-for net in "2_9" "net_2_9_property_8_unknown"
-do
-  python -u "$HERE/safety.py" \
-  --network "$net" --property 8 --timeout "$TIMEOUT" --precision "$PRECISION" \
-  "$@" \
-  | tee "$OUT_DIR/${net}_property8.log"
-done
+python -u "$HERE/safety.py" \
+--network "1_9" --property 7 --timeout "$TIMEOUT" --precision "$PRECISION" \
+"$@" \
+| tee "$OUT_DIR/property7_1_9.log"
+python -u "$HERE/safety.py" \
+--network "2_9" --property 8 --timeout "$TIMEOUT" --precision "$PRECISION" \
+"$@" \
+| tee "$OUT_DIR/property8_2_9.log"
 
 OUT_DIR="$HERE/../output/$TIMESTAMP/acasxu/robustness"
 mkdir -p "$OUT_DIR"
@@ -49,7 +46,7 @@ do
       --network "1_1" --label "$label" --target "$target" --input "$i" \
       --timeout "$TIMEOUT" --precision "$PRECISION" \
       "$@" \
-      | tee "$OUT_DIR/1_1_${label}_to_${target}_${i}.log"
+      | tee "$OUT_DIR/net_1_1_${label}_to_${target}_${i}.log"
     done
   done
 done
