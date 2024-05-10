@@ -27,8 +27,19 @@ python -u "$HERE/safety.py" \
 --network "2_9" --property 8 --timeout "$TIMEOUT" --precision "$PRECISION" \
 "$@" \
 | tee "$OUT_DIR/property8_2_9.log"
-
 # Comparison with ProVe_SLR
+for net in "4_3" "4_9" "5_8"
+do
+  python -u "$HERE/safety.py" \
+  --network "$net" --property 2 --timeout "$TIMEOUT" --precision "$PRECISION" \
+  "$@" \
+  | tee "$OUT_DIR/property2_$net.log"
+done
+
+# More precise, precision reported by ProVe_SLR paper
+OUT_DIR="$HERE/../output/$TIMESTAMP/acasxu/safety_more_precise"
+mkdir -p "$OUT_DIR"
+
 TIMEOUT=14400  # 4h
 PRECISION=0.0001
 for net in "4_3" "4_9" "5_8"
@@ -38,9 +49,6 @@ do
   "$@" \
   | tee "$OUT_DIR/property2_$net.log"
 done
-
-OUT_DIR="$HERE/../output/$TIMESTAMP/acasxu/robustness"
-mkdir -p "$OUT_DIR"
 
 # Comparison with eProVe
 OUT_DIR="$HERE/../output/$TIMESTAMP/acasxu/safety_less_precise"
@@ -58,6 +66,7 @@ do
   done
 done
 
+# Comparison with SpaceScanner
 OUT_DIR="$HERE/../output/$TIMESTAMP/acasxu/robustness"
 mkdir -p "$OUT_DIR"
 
