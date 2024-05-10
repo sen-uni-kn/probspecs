@@ -44,30 +44,32 @@ def get_instance_name(dir_, file_name):
                 "Network": network,
                 "Qualified": has_qual == "qual",
             }
+    match dir_.parent.name:
         case "mini_acs_income":
             num_vars, _ = file_name.split("_")
             return {"Input Variables": num_vars}
-    if dir_.parent.name == "acasxu":
-        if dir_.name == "robustness":
-            # example: 1_1_0_to_0_0.log
-            # example: netABC_3_to_1_1999.log
-            network, source_label, _, target_label, end = file_name.rsplit(
-                "_", maxsplit=4
-            )
-            input_i, _ = end.split(".")
-            return {
-                "Network": network,
-                "Source Label": int(source_label),
-                "Target Label": int(target_label),
-                "Input": int(input_i),
-            }
-        elif "property" in file_name:
-            # example: 2_1_property2.log
-            # example: netABC_property100.log
-            property_i = file_name.rindex("property")
-            network = file_name[: property_i - 1]  # there is a _ before property
-            prop, _ = file_name[property_i + len("property") :].split(".")
-            return {"Network": network, "Property": prop}
+        case "acasxu":
+            if dir_.name == "robustness":
+                # example: 1_1_0_to_0_0.log
+                # example: netABC_3_to_1_1999.log
+                network, source_label, _, target_label, end = file_name.rsplit(
+                    "_", maxsplit=4
+                )
+                input_i, _ = end.split(".")
+                return {
+                    "Network": network,
+                    "Source Label": int(source_label),
+                    "Target Label": int(target_label),
+                    "Input": int(input_i),
+                }
+            elif "property" in file_name:
+                # example: 2_1_property2.log
+                # example: netABC_property100.log
+                property_i = file_name.rindex("property")
+                network = file_name[: property_i - 1]  # there is a _ before property
+                prop, _ = file_name[property_i + len("property") :].split(".")
+                return {"Network": network, "Property": prop}
+    raise ValueError(f"Unknown experiment: {dir_}.")
 
 
 runtime_re = re.compile(r"Runtime:? *(?P<seconds>\d+\.\d*)")
@@ -139,8 +141,13 @@ if __name__ == "__main__":
     subdirs = [d for d in experiment_directory.iterdir() if d.is_dir()]
     for subdir in subdirs:
         match subdir.name:
-            case "fairsquare" | "mini_acs_income":
+            case "fairsquare":
                 collect_verify(subdir)
+            case "mini_acs_income":
+                if (subdir / "verify").exists():
+                    collect_verify(subdir / "verify")
+                if (subdir / "enumerate").exists():
+                    collect_verify(subdir / "enumerate")
             case "acasxu":
                 if (subdir / "safety").exists():
                     collect_bound(subdir / "safety")
