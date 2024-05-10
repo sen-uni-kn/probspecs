@@ -16,10 +16,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "-p",
         "--population-model",
-        choices=("ind", "eBN", "eBNc", "rBN", "rBNc", "BN", "BNc", "BNcc"),
+        choices=("rind", "uind", "eBN", "eBNc", "rBN", "rBNc", "BN", "BNc", "BNcc"),
         required=True,
         help="The population model. "
-        "ind: independent, "
+        "rind: independent with realistic bounds (age < 0 disallowed), "
+        "uind: independent with unrealistic bounds (age < 0 allowed), "
         "eBN: the FairSquare Bayesian network, encoded as a probability distribution, "
         "with unrealistic bounds (age < 0 allowed), "
         "eBNc: eBN with an integrity constraint."
