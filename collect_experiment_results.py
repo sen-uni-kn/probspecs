@@ -50,7 +50,7 @@ def get_instance_name(dir_, file_name):
             return {"Input Variables": num_vars}
         case "acasxu":
             if dir_.name == "robustness":
-                # example: 1_1_0_to_0_0.log
+                # example: net1_1_0_to_0_0.log
                 # example: netABC_3_to_1_1999.log
                 network, source_label, _, target_label, end = file_name.rsplit(
                     "_", maxsplit=4
@@ -97,7 +97,7 @@ def collect_verify(dir_):
     data_file = dir_ / "results.csv"
     print(f"Saving results from {dir_} to {data_file}.")
     data = pd.DataFrame(data)
-    data.to_csv(data_file, index=False)
+    data.to_csv(data_file, index=False, float_format="%.8f")
 
 
 bounds_re = re.compile(r"(?P<lb>-?\d+\.\d*) *<=.*<= *(?P<ub>-?\d+\.\d*)")
@@ -124,7 +124,7 @@ def collect_bound(dir_):
     data_file = dir_ / "results.csv"
     print(f"Saving results from {dir_} to {data_file}.")
     data = pd.DataFrame(data)
-    data.to_csv(data_file, index=False)
+    data.to_csv(data_file, index=False, float_format="%.8f")
 
 
 if __name__ == "__main__":

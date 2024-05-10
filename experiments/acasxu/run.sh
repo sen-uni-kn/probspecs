@@ -56,13 +56,13 @@ for label in {0..4}
 do
   for target in {0..4}
   do
-    for i in {0..5}
+    for i in {0..4}
     do
       python -u "$HERE/robustness.py" \
       --network "1_1" --label "$label" --target "$target" --input "$i" \
       --timeout "$TIMEOUT" --precision "$PRECISION" \
       "$@" \
-      | tee "$OUT_DIR/net_1_1_${label}_to_${target}_${i}.log"
+      | tee "$OUT_DIR/net1_1_${label}_to_${target}_${i}.log"
     done
   done
 done
