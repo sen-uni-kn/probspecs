@@ -62,8 +62,10 @@ if __name__ == "__main__":
     log_machine_and_code_details()
 
     match args.population_model:
-        case "ind":
+        case "rind":
             pop_model = IndependentPopulationModel()
+        case "uind":
+            pop_model = IndependentPopulationModel(realistic=False)
         case "BN":
             pop_model = BayesianNetworkPopulationModel()
         case "BNc":
