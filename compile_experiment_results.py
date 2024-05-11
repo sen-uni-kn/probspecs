@@ -11,11 +11,20 @@ def decimals_only(f):
     if f == 0:  # negative zero to zero
         f = 0.0
     if f >= 0.995:
-        f = 0.990
+        f = 1.0
     if f >= 1.0:
         return "1.0"
     else:
         return f".{f*100:02.0f}"
+
+
+def as_percentage(f):
+    if f == 0:  # negative zero to zero
+        f = 0.0
+    if f >= 1.0:
+        return r"100\%"
+    else:
+        return rf"{f*100:2.1f}\%"
 
 
 if __name__ == "__main__":
@@ -92,10 +101,10 @@ if __name__ == "__main__":
     )
 
     # ACAS Xu Safety Tables
-    for suffix, out_suffix in (
-        ("", ""),
-        ("_less_precise", "LessPrecise"),
-        ("_more_precise", "MorePrecise"),
+    for suffix, out_suffix, timeout in (
+        ("", "", 900),
+        ("_less_precise", "LessPrecise", 45),
+        ("_more_precise", "MorePrecise", 4 * 6 * 60),
     ):
         safety_subdir = experiment_directory / "acasxu" / ("safety" + suffix)
         if not safety_subdir.exists():
@@ -151,10 +160,10 @@ if __name__ == "__main__":
             formatters={
                 "Property": lambda p: property_lookup[p],
                 "Network": lambda n: network_name_lookup[n],
-                "Lower Bound": lambda v: f"{v:6.4f}",
-                "Upper Bound": lambda v: f"{v:6.4f}",
-                "Precision": lambda v: f"{v:6.4f}",
-                "Runtime": lambda r: f"{float(r):6.1f}" if r < 900.0 else "    TO",
+                "Lower Bound": lambda v: rf"{v*100:6.2f}\%",
+                "Upper Bound": lambda v: rf"{v*100:6.2f}\%",
+                "Precision": lambda v: rf"{v*100:6.2f}\%",
+                "Runtime": lambda r: f"{float(r):6.1f}" if r < timeout else "    TO",
             },
         )
 
@@ -188,8 +197,10 @@ if __name__ == "__main__":
     label_replace = {0: "COC", 1: "WL ", 2: "WR ", 3: "SL ", 4: "SR "}
     robustness_df["Source Label"].replace(label_replace, inplace=True)
     robustness_df["Target Label"].replace(label_replace, inplace=True)
-    robustness_df["LB"] = robustness_df["Lower Bound"].map(decimals_only)
-    robustness_df["UB"] = robustness_df["Upper Bound"].map(decimals_only)
+    # robustness_df["LB"] = robustness_df["Lower Bound"].map(decimals_only)
+    # robustness_df["UB"] = robustness_df["Upper Bound"].map(decimals_only)
+    robustness_df["LB"] = robustness_df["Lower Bound"].map(as_percentage)
+    robustness_df["UB"] = robustness_df["Upper Bound"].map(as_percentage)
     robustness_df["Bounds"] = robustness_df["LB"] + ", " + robustness_df["UB"]
     robustness_df["Precision"] = (
         robustness_df["Upper Bound"] - robustness_df["Lower Bound"] + 0.0
