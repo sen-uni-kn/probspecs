@@ -273,20 +273,30 @@ if __name__ == "__main__":
     print("Writing", out_file)
     df.to_csv(out_file, index=False)
 
-    # Num Neurons Figure
+    # Network Size Figure
     select = (verify_df["InputVariables"] == 4) & (verify_df["NumLayers"] == 1)
-    df = verify_df[select].copy()
-    df.replace("TO", 3600, inplace=True)
-    df.sort_values(by="NumNeurons", inplace=True)
-    out_file = experiment_directory / "MiniACSIncomeNumNeurons.csv"
-    print("Writing", out_file)
-    df.to_csv(out_file, index=False)
+    width = verify_df[select].copy()
+    # 4 inputs x size -> size x 2 outputs
+    width["NumParameters"] = (4 + 2) * width["NumNeurons"]
+    # width.replace("TO", 3600, inplace=True)
+    # width.sort_values(by="NumParameters", inplace=True)
+    # out_file = experiment_directory / "MiniACSIncomeNumNeurons.csv"
+    # print("Writing", out_file)
+    # width.to_csv(out_file, index=False)
 
-    # Num Layers Figure
     select = (verify_df["InputVariables"] == 4) & (verify_df["NumNeurons"] == 10)
-    df = verify_df[select].copy()
+    depth = verify_df[select].copy()
+    # 4 x 10 inputs -> size times 10 x 10 -> 10 x 2 outputs
+    depth["NumParameters"] = 40 + 100 * (depth["NumLayers"] - 1) + 20
+    # depth.replace("TO", 3600, inplace=True)
+    # depth.sort_values(by="NumParameters", inplace=True)
+    # out_file = experiment_directory / "MiniACSIncomeNumLayers.csv"
+    # print("Writing", out_file)
+    # depth.to_csv(out_file, index=False)
+
+    df = pd.concat([depth, width], axis=0)
     df.replace("TO", 3600, inplace=True)
-    df.sort_values(by="NumLayers", inplace=True)
-    out_file = experiment_directory / "MiniACSIncomeNumLayers.csv"
+    df.sort_values(by="NumParameters", inplace=True)
+    out_file = experiment_directory / "MiniACSIncomeNumParameters.csv"
     print("Writing", out_file)
     df.to_csv(out_file, index=False)

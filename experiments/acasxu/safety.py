@@ -60,7 +60,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--precision",
         type=float,
-        default=1e-3,
+        default=None,
         help="A threshold for the precision of the computed bounds. This script stops once this threshold is reached.",
     )
     parser.add_argument(
