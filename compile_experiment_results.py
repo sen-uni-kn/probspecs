@@ -247,17 +247,46 @@ if __name__ == "__main__":
     mini_acs_income_subdir = experiment_directory / "mini_acs_income"
 
     verify_df = pd.read_csv(mini_acs_income_subdir / "verify" / "results.csv")
-    verify_df.columns = ["InputVariables", "VerifyFair", "VerifyRuntime"]
-    verify_df.index = verify_df["InputVariables"]
+    verify_df.columns = verify_df.columns.str.replace(" ", "")
 
     enumerate_df = pd.read_csv(mini_acs_income_subdir / "enumerate" / "results.csv")
-    enumerate_df.columns = ["InputVariables", "EnumerateFair", "EnumerateRuntime"]
-    enumerate_df.index = enumerate_df["InputVariables"]
-    enumerate_df.drop("InputVariables", axis=1, inplace=True)
+    enumerate_df.columns = enumerate_df.columns.str.replace(" ", "")
+    enumerate_df.rename(
+        columns={"Runtime": "EnumerateRuntime", "Fair": "EnumerateFair"}, inplace=True
+    )
 
-    df = pd.concat([verify_df, enumerate_df], axis=1)
+    # Input Variables Figure
+    select = (verify_df["NumNeurons"] == 10) & (verify_df["NumLayers"] == 1)
+    small_network_df = verify_df[select].copy()
+    small_network_df.rename(
+        columns={"Runtime": "VerifyRuntime", "Fair": "VerifyFair"}, inplace=True
+    )
+    small_network_df.index = small_network_df["InputVariables"]
+    enumerate_df.index = enumerate_df["InputVariables"]
+    enumerate_df.drop(
+        ["InputVariables", "NumNeurons", "NumLayers"], axis=1, inplace=True
+    )
+    df = pd.concat([small_network_df, enumerate_df], axis=1)
     df.replace("TO", 3600, inplace=True)
     df.sort_index(inplace=True)
-    out_file = experiment_directory / "MiniACSIncomeResults.csv"
+    out_file = experiment_directory / "MiniACSIncomeInputSize.csv"
+    print("Writing", out_file)
+    df.to_csv(out_file, index=False)
+
+    # Num Neurons Figure
+    select = (verify_df["InputVariables"] == 4) & (verify_df["NumLayers"] == 1)
+    df = verify_df[select].copy()
+    df.replace("TO", 3600, inplace=True)
+    df.sort_values(by="NumNeurons", inplace=True)
+    out_file = experiment_directory / "MiniACSIncomeNumNeurons.csv"
+    print("Writing", out_file)
+    df.to_csv(out_file, index=False)
+
+    # Num Layers Figure
+    select = (verify_df["InputVariables"] == 4) & (verify_df["NumNeurons"] == 10)
+    df = verify_df[select].copy()
+    df.replace("TO", 3600, inplace=True)
+    df.sort_values(by="NumLayers", inplace=True)
+    out_file = experiment_directory / "MiniACSIncomeNumLayers.csv"
     print("Writing", out_file)
     df.to_csv(out_file, index=False)

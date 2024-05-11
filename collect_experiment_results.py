@@ -46,8 +46,22 @@ def get_instance_name(dir_, file_name):
             }
     match dir_.parent.name:
         case "mini_acs_income":
-            num_vars, _ = file_name.split("_")
-            return {"Input Variables": num_vars}
+            num_vars, *remainder = file_name.split("_")
+            info = {"Input Variables": num_vars}
+            if len(remainder) == 1:
+                info["Num Neurons"] = 10
+                info["Num Layers"] = 1
+            else:
+                _, size, kind = remainder
+                if kind.startswith("neurons"):
+                    info["Num Neurons"] = int(size)
+                    info["Num Layers"] = 1
+                elif kind.startswith("layers"):
+                    info["Num Neurons"] = 10
+                    info["Num Layers"] = int(size)
+                else:
+                    raise ValueError(f"Unknown network: {file_name}.")
+            return info
         case "acasxu":
             if dir_.name == "robustness":
                 # example: net1_1_0_to_0_0.log

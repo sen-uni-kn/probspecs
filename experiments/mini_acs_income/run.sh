@@ -10,12 +10,11 @@ fi
 OUT_DIR="$HERE/../output/$TIMESTAMP/mini_acs_income/verify"
 mkdir -p "$OUT_DIR"
 
-# Warmup (for some reason the output of the first run often gets lost
+# Warmup (for some reason the output of the first run often gets lost)
 timeout 60 python -u "$HERE/verify.py" \
 --num-variables 1 \
 --timeout 60 \
-"$@" \
-| tee "$OUT_DIR/tmp.log"
+"$@"
 
 TIMEOUT=3600
 HARD_TIMEOUT=3660s  # 60 seconds for setup, etc (very generous)
