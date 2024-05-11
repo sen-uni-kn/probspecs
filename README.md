@@ -27,9 +27,10 @@ from the root directory of this repository.
 
 ## Experiments
 ```bash
-python download_dataset.py  # so that downloading doesn't hamper with timeouts
-# ./train_networks.sh  # Optional, if you want to recreate the networks
+python scripts/download_dataset.py  # so that downloading doesn't hamper with timeouts
+# ./scripts/train_networks.sh  # Optional, only if you want to recreate the networks
 # TODO: pop models
-./run_experiments.sh
+./scripts/run_experiments.sh
 ```
 For reproducing the experiments using the FairSquare algorithm, see `fairsquare/README.md`.
+For eProVe, see https://github.com/d-corsi/eProVe/.
