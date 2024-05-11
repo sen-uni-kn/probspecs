@@ -1,7 +1,7 @@
 #  Copyright (c) 2024. David Boetius
 #  Licensed under the MIT License
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import platform
 
@@ -194,7 +194,7 @@ def log_machine_and_code_details():
     stats = (
         f"Setup Details\n"
         f"----------------------------------------------------------------------\n"
-        f"time: {datetime.now()}"
+        f"time: {datetime.now(timezone.utc)}\n"
         f"code version: {commit}\n"
         f"platform: {platform.platform(aliased=True)}\n"
         f"CPU:\n"
