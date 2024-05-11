@@ -21,11 +21,11 @@ do
     | tee "$OUT_DIR/property2_$net.log"
   done
   python -u "$HERE/safety.py" \
-  --network "1_9" --property 7 --timeout "$TIMEOUT" --precision "$PRECISION" \
+  --network "1_9" --property 7 --timeout "$TIMEOUT" \
   "$@" \
   | tee "$OUT_DIR/property7_1_9.log"
   python -u "$HERE/safety.py" \
-  --network "2_9" --property 8 --timeout "$TIMEOUT" --precision "$PRECISION" \
+  --network "2_9" --property 8 --timeout "$TIMEOUT" \
   "$@" \
   | tee "$OUT_DIR/property8_2_9.log"
 done
