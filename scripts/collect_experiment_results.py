@@ -35,54 +35,54 @@ def list_log_files(dir_):
 
 
 def get_instance_name(dir_, file_name):
-    match dir_.name:
-        case "fairsquare":
-            pop_model, _, network, has_qual = file_name.split("_", maxsplit=3)
-            has_qual, _ = has_qual.split(".")  # drop file extension
-            return {
-                "Population Model": pop_model,
-                "Network": network,
-                "Qualified": has_qual == "qual",
-            }
-    match dir_.parent.name:
-        case "mini_acs_income":
-            num_vars, *remainder = file_name.split("_")
-            info = {"Input Variables": num_vars}
-            if len(remainder) == 1:
-                info["Num Neurons"] = 10
-                info["Num Layers"] = 1
-            else:
-                _, size, kind = remainder
-                if kind.startswith("neurons"):
-                    info["Num Neurons"] = int(size)
-                    info["Num Layers"] = 1
-                elif kind.startswith("layers"):
-                    info["Num Neurons"] = 10
-                    info["Num Layers"] = int(size)
-                else:
-                    raise ValueError(f"Unknown network: {file_name}.")
-            return info
-        case "acasxu":
-            if dir_.name == "robustness":
-                # example: net1_1_0_to_0_0.log
-                # example: netABC_3_to_1_1999.log
-                network, source_label, _, target_label, end = file_name.rsplit(
-                    "_", maxsplit=4
-                )
-                input_i, _ = end.split(".")
+    for parent_dir in reversed(dir_.parts[-3:]):
+        match parent_dir:
+            case "fairsquare":
+                pop_model, _, network, has_qual = file_name.split("_", maxsplit=3)
+                has_qual, _ = has_qual.split(".")  # drop file extension
                 return {
+                    "Population Model": pop_model,
                     "Network": network,
-                    "Source Label": int(source_label),
-                    "Target Label": int(target_label),
-                    "Input": int(input_i),
+                    "Qualified": has_qual == "qual",
                 }
-            elif "property" in file_name:
-                # example: property2_2_1.log
-                # example: property100_netABC.log
-                underscore_i = file_name.index("_")
-                prop = file_name[:underscore_i]
-                network, _ = file_name[underscore_i + 1 :].split(".")
-                return {"Network": network, "Property": prop}
+            case "mini_acs_income":
+                num_vars, *remainder = file_name.split("_")
+                info = {"Input Variables": num_vars}
+                if len(remainder) == 1:
+                    info["Num Neurons"] = 10
+                    info["Num Layers"] = 1
+                else:
+                    _, size, kind = remainder
+                    if kind.startswith("neurons"):
+                        info["Num Neurons"] = int(size)
+                        info["Num Layers"] = 1
+                    elif kind.startswith("layers"):
+                        info["Num Neurons"] = 10
+                        info["Num Layers"] = int(size)
+                    else:
+                        raise ValueError(f"Unknown network: {file_name}.")
+                return info
+            case "acasxu":
+                if "property" in file_name:
+                    # example: property2_2_1.log
+                    # example: property100_netABC.log
+                    underscore_i = file_name.index("_")
+                    prop = file_name[:underscore_i]
+                    network, _ = file_name[underscore_i + 1 :].split(".")
+                    return {"Network": network, "Property": prop}
+                else:  # robustness experiment
+                    # example: net1_1_0_to_0_0.log
+                    # example: netABC_3_to_1_1999.log
+                    network, source_label, _, target_label, end = file_name.rsplit(
+                        "_", maxsplit=4
+                    )
+                    input_i, _ = end.split(".")
+                    return {
+                        "Network": network,
+                        "Source Label": int(source_label),
+                        "Target Label": int(target_label),
+                        "Input": int(input_i),
+                    }
     raise ValueError(f"Unknown experiment: {dir_}.")
 
 
@@ -163,13 +163,12 @@ if __name__ == "__main__":
                 if (subdir / "enumerate").exists():
                     collect_verify(subdir / "enumerate")
             case "acasxu":
-                if (subdir / "safety").exists():
-                    collect_bound(subdir / "safety")
-                if (subdir / "safety_less_precise").exists():
-                    collect_bound(subdir / "safety_less_precise")
-                if (subdir / "safety_more_precise").exists():
-                    collect_bound(subdir / "safety_more_precise")
                 if (subdir / "robustness").exists():
                     collect_bound(subdir / "robustness")
+                safety_dir = subdir / "safety"
+                if safety_dir.exists():
+                    for timeout_dir in safety_dir.iterdir():
+                        if timeout_dir.is_dir():
+                            collect_bound(timeout_dir)
             case _:
                 print(f"Skipping unknown directory: {subdir.name}")

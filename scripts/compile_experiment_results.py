@@ -101,11 +101,7 @@ if __name__ == "__main__":
     )
 
     # ACAS Xu Safety Tables
-    for suffix, out_suffix, timeout in (
-        ("", "", 900),
-        ("_less_precise", "LessPrecise", 45),
-        ("_more_precise", "MorePrecise", 4 * 6 * 60),
-    ):
+    for suffix, out_suffix, timeout in ():
         safety_subdir = experiment_directory / "acasxu" / ("safety" + suffix)
         if not safety_subdir.exists():
             continue
@@ -166,6 +162,110 @@ if __name__ == "__main__":
                 "Runtime": lambda r: f"{float(r):6.1f}" if r < timeout else "    TO",
             },
         )
+
+    # ACAS Xu Safety Tables
+    safety_subdir = experiment_directory / "acasxu" / "safety"
+    dfs = []
+    timeouts = []
+    for timeout_dir in [d for d in safety_subdir.iterdir() if d.is_dir()]:
+        timeout = timeout_dir.name
+        timeouts.append(timeout)
+        results_df = pd.read_csv(timeout_dir / "results.csv")
+        results_df.index = pd.MultiIndex.from_frame(results_df[["Property", "Network"]])
+        results_df.drop(columns=["Network", "Property"], inplace=True)
+        results_df.drop(columns=["Runtime", "Abort Reason"], inplace=True)
+        lb = results_df["Lower Bound"].map(as_percentage)
+        ub = results_df["Upper Bound"].map(as_percentage)
+        results_df["Bounds"] = "$" + lb + ", " + ub + "$"
+        results_df["Precision"] = results_df["Upper Bound"] - results_df["Lower Bound"]
+        results_df.columns = pd.MultiIndex.from_product(
+            [(timeout,), ("Lower Bound", "Upper Bound", "Bounds", "Precision")]
+        )
+        dfs.append(results_df)
+    df = dfs[0].join(dfs[1:], how="outer")
+
+    df["Property"] = df.index.get_level_values("Property")
+    df["Network"] = df.index.get_level_values("Network")
+    df["Instance Name"] = (
+        df.index.get_level_values("Property")
+        + "_"
+        + df.index.get_level_values("Network")
+    )
+
+    df.sort_index(inplace=True)
+    timeouts.sort(key=lambda x: int(x))
+    column_order = [("Property", ""), ("Network", ""), ("Instance Name", "")] + list(
+        itertools.chain(
+            *[
+                [
+                    (timeout, "Lower Bound"),
+                    (timeout, "Upper Bound"),
+                    (timeout, "Bounds"),
+                    (timeout, "Precision"),
+                ]
+                for timeout in timeouts
+            ]
+        )
+    )
+    df = df[column_order]
+
+    # Utilities for LaTeX formatting
+    network_name_lookup = {
+        f"{i1}_{i2}": f"$N_{{{i1},{i2}}}$" for i1 in range(1, 6) for i2 in range(1, 10)
+    }
+    property_lookup = {i: rf"$\varphi_{{{i}}}$" for i in range(1, 11)} | {
+        f"property{i}": rf"$\varphi_{{{i}}}$" for i in range(1, 11)
+    }
+
+    def bound_formatter(val):
+        return rf"${val*100:6.2f}\%$"
+
+    # Rename index levels for nicer LaTex export
+    df.index = df.index.set_levels(
+        [
+            [property_lookup[p] for p in df.index.unique("Property").sort_values()],
+            [network_name_lookup[n] for n in df.index.unique("Network").sort_values()],
+        ],
+    )
+
+    # Short Table
+    selection = [
+        (property_lookup["property2"], network_name_lookup["4_3"]),
+        (property_lookup["property2"], network_name_lookup["4_9"]),
+        (property_lookup["property2"], network_name_lookup["5_8"]),
+        (property_lookup["property7"], network_name_lookup["1_9"]),
+        (property_lookup["property8"], network_name_lookup["2_9"]),
+    ]
+    selection = df[df.index.isin(selection)]
+    out_file = experiment_directory / f"ACASXuSafetySelected.tex"
+    print("Writing", out_file)
+    selection.to_latex(
+        out_file,
+        columns=list(
+            itertools.chain(
+                *[[(timeout, "Bounds"), (timeout, "Precision")] for timeout in timeouts]
+            )
+        ),
+        header=True,
+        index=True,
+        float_format=bound_formatter,
+    )
+
+    # Full Table
+    out_file = experiment_directory / f"ACASXuSafetyFull.tex"
+    print("Writing", out_file)
+    df.to_latex(
+        out_file,
+        columns=list(
+            itertools.chain(
+                *[[(timeout, "Bounds"), (timeout, "Precision")] for timeout in timeouts]
+            )
+        ),
+        header=True,
+        index=True,
+        float_format=bound_formatter,
+        na_rep="--",
+    )
 
     # ACAS Xu Robustness Tables
     robustness_subdir = experiment_directory / "acasxu" / "robustness"
