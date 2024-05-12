@@ -195,7 +195,7 @@ if __name__ == "__main__":
         lower, upper = best_bounds
         if args.log:
             print(f"{lower:.6f} <= P(violation) <= {upper:.6f}")
-        if upper - lower <= args.precision:
+        if args.precision is not None and upper - lower <= args.precision:
             print(f"{lower:.6f} <= P(violation) <= {upper:.6f}")
             print(f"Precision Reached.")
             break
