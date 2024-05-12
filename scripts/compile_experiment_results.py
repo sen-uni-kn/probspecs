@@ -27,6 +27,17 @@ def as_percentage(f):
         return rf"{f*100:2.1f}\%"
 
 
+def bound_formatter(val, dollars=True):
+    formatted = rf"{val*100:6.2f}\%"
+    if dollars:
+        formatted = f"${formatted}$"
+    return formatted
+
+
+def bound_formatter2(val):
+    return bound_formatter(val, dollars=False)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Compile Experiment Results")
     parser.add_argument(
@@ -174,8 +185,8 @@ if __name__ == "__main__":
         results_df.index = pd.MultiIndex.from_frame(results_df[["Property", "Network"]])
         results_df.drop(columns=["Network", "Property"], inplace=True)
         results_df.drop(columns=["Runtime", "Abort Reason"], inplace=True)
-        lb = results_df["Lower Bound"].map(as_percentage)
-        ub = results_df["Upper Bound"].map(as_percentage)
+        lb = results_df["Lower Bound"].map(bound_formatter2)
+        ub = results_df["Upper Bound"].map(bound_formatter2)
         results_df["Bounds"] = "$" + lb + ", " + ub + "$"
         results_df["Precision"] = results_df["Upper Bound"] - results_df["Lower Bound"]
         results_df.columns = pd.MultiIndex.from_product(
@@ -217,9 +228,6 @@ if __name__ == "__main__":
         f"property{i}": rf"$\varphi_{{{i}}}$" for i in range(1, 11)
     }
 
-    def bound_formatter(val):
-        return rf"${val*100:6.2f}\%$"
-
     # Rename index levels for nicer LaTex export
     df.index = df.index.set_levels(
         [
@@ -251,14 +259,17 @@ if __name__ == "__main__":
         float_format=bound_formatter,
     )
 
-    # Full Table
+    # Table with more networks but fewer timeouts
     out_file = experiment_directory / f"ACASXuSafetyFull.tex"
     print("Writing", out_file)
     df.to_latex(
         out_file,
         columns=list(
             itertools.chain(
-                *[[(timeout, "Bounds"), (timeout, "Precision")] for timeout in timeouts]
+                *[
+                    [(timeout, "Bounds"), (timeout, "Precision")]
+                    for timeout in ["10", "30", "60"]
+                ]
             )
         ),
         header=True,
