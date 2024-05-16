@@ -1,0 +1,3 @@
+branch_selection_heuristic: prob-mass
+split_heuristic: longest-edge
+auto_lirpa_method: IBP
