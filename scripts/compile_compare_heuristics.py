@@ -19,8 +19,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     experiment_directories = args.directories
 
-    runtimes = {}
-
     for experiment_directory in experiment_directories:
         experiment_directory = Path(experiment_directory)
         fairsquare_df = pd.read_csv(experiment_directory / "fairsquare" / "results.csv")
@@ -37,11 +35,9 @@ if __name__ == "__main__":
                 mini_acs_income_df["Runtime"],
             ]
         )
-        rt.replace("TO", 3600, inplace=True)
-        experiment_name = experiment_directory.name
-        runtimes[experiment_name] = rt
-
-    runtimes = pd.DataFrame(runtimes)
-    out_file = "HeuristicsComparison.csv"
-    print("Writing", out_file)
-    runtimes.to_csv(out_file, index=False)
+        rt = pd.to_numeric(rt[rt != "TO"])
+        rt.sort_values(ascending=True, inplace=True)
+        rt = pd.DataFrame({"Nr": range(1, len(rt) + 1), "Runtime": rt})
+        out_file = experiment_directory / "Runtimes.csv"
+        print("Writing", out_file)
+        rt.to_csv(out_file)
