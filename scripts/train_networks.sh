@@ -11,7 +11,7 @@ do
 done
 
 # vary network size
-for size in 20 30 40 50 60 70 80 90 100 200 300 400 500 600 700 800 900 1000 2000 3000 4000 5000 6000 7000 8000 9000 10000
+for size in 1000 2000 3000 4000 5000 6000 7000 8000 9000 10000
 do
   NET_NAME="MiniACSIncome-4_size_${size}"
   python experiments/train_on_tabular_datasets.py \

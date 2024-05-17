@@ -2,9 +2,12 @@
 #  Licensed under the MIT License
 import argparse
 from collections import defaultdict
+from math import floor
 from pathlib import Path
 
+import pandas as pd
 import torch
+from torch.utils.data import random_split
 
 from experiments.mini_acs_income import MiniACSIncome
 
@@ -34,6 +37,8 @@ if __name__ == "__main__":
         net = torch.load(path)
         networks[int(num_variables)].append((num_layers, num_neurons, net))
 
+    stats_data = []
+
     for num_variables, nets in networks.items():
         print()
         print("=" * 100)
@@ -45,9 +50,16 @@ if __name__ == "__main__":
         dataset = MiniACSIncome(
             root=".datasets", num_variables=num_variables, normalize=True
         )
+        rng = torch.Generator().manual_seed(163050276766629)
+        train_size = floor(0.7 * len(dataset))
+        test_size = len(dataset) - train_size
+        _, dataset = random_split(dataset, (train_size, test_size), generator=rng)
+
+        data = dataset.dataset.data[dataset.indices]
+        targets = dataset.dataset.targets[dataset.indices]
 
         @torch.no_grad()
-        def stats(net_, data=dataset.data, targets=dataset.targets):
+        def stats(net_, data=data, targets=targets):
             predictions = torch.argmax(net_(data), dim=1)
             tp_rate = ((predictions == 1) & (targets == 1)).float().mean()
             fp_rate = ((predictions == 1) & (targets == 0)).float().mean()
@@ -59,13 +71,13 @@ if __name__ == "__main__":
             fscore = 2 * (precision * recall) / (precision + recall)
             return accuracy, precision, recall, fscore
 
-        encoding_layout = dataset.input_space.encoding_layout
+        encoding_layout = dataset.dataset.input_space.encoding_layout
         female_i = encoding_layout["SEX"]["Female"]
         male_i = encoding_layout["SEX"]["Male"]
-        female = dataset.data[:, female_i] >= 1.0
-        male = dataset.data[:, male_i] >= 1.0
-        female_data, female_targets = dataset.data[female], dataset.targets[female]
-        male_data, male_targets = dataset.data[male], dataset.targets[male]
+        female = data[:, female_i] >= 1.0
+        male = data[:, male_i] >= 1.0
+        female_data, female_targets = data[female], targets[female]
+        male_data, male_targets = data[male], targets[male]
 
         @torch.no_grad()
         def stats_by_sex(net_):
@@ -100,3 +112,46 @@ if __name__ == "__main__":
                 f"| {m_recall:9.2%} | {m_fscore:9.2f}"
             )
             print()
+
+            stats_data.append(
+                {
+                    "Input Size": num_variables,
+                    "Num Layers": num_layers,
+                    "Num Neurons": num_neurons,
+                    "Overall Accuracy": accuracy.item(),
+                    "Overall Precision": precision.item(),
+                    "Overall Recall": recall.item(),
+                    "Overall F-Score": fscore.item(),
+                    "Female Accuracy": f_accuracy.item(),
+                    "Female Precision": f_precision.item(),
+                    "Female Recall": f_recall.item(),
+                    "Female F-Score": f_fscore.item(),
+                    "Male Accuracy": m_accuracy.item(),
+                    "Male Precision": m_precision.item(),
+                    "Male Recall": m_recall.item(),
+                    "Male F-Score": m_fscore.item(),
+                }
+            )
+
+    stats_df = pd.DataFrame(stats_data)
+
+    def format_float(val):
+        return rf"{val*100:3.0f}\%"
+
+    print()
+    print()
+    print(
+        stats_df.to_latex(
+            formatters={
+                "Overall Accuracy": format_float,
+                "Overall Precision": format_float,
+                "Overall Recall": format_float,
+                "Female Accuracy": format_float,
+                "Female Precision": format_float,
+                "Female Recall": format_float,
+                "Male Accuracy": format_float,
+                "Male Precision": format_float,
+                "Male Recall": format_float,
+            }
+        )
+    )
