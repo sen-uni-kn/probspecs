@@ -22,7 +22,7 @@ def as_percentage(f):
     if f == 0:  # negative zero to zero
         f = 0.0
     if f >= 1.0:
-        return r"100\%"
+        return r" 100\%"
     else:
         return rf"{f*100:2.1f}\%"
 
@@ -281,6 +281,7 @@ if __name__ == "__main__":
     # ACAS Xu Robustness Tables
     robustness_subdir = experiment_directory / "acasxu" / "robustness"
     robustness_df = pd.read_csv(robustness_subdir / "results.csv")
+    #
 
     runtime_summary = robustness_df[["Runtime"]].describe().transpose()
     runtime_summary.columns = [
@@ -299,15 +300,13 @@ if __name__ == "__main__":
 
     robustness_df.sort_values(
         by=["Network", "Source Label", "Input", "Target Label"],
-        key=lambda series: series.replace(
-            {f"{i1}_{i2}": i1 * 10 + i2 for i1 in range(1, 6) for i2 in range(1, 10)}
-        ),
         ascending=True,
         inplace=True,
     )
     label_replace = {0: "COC", 1: "WL ", 2: "WR ", 3: "SL ", 4: "SR "}
-    robustness_df["Source Label"].replace(label_replace, inplace=True)
+    # robustness_df["Source Label"].replace(label_replace, inplace=True)
     robustness_df["Target Label"].replace(label_replace, inplace=True)
+    robustness_df["Input"] = robustness_df["Input"] + 1  # indexing from 1
     # robustness_df["LB"] = robustness_df["Lower Bound"].map(decimals_only)
     # robustness_df["UB"] = robustness_df["Upper Bound"].map(decimals_only)
     robustness_df["LB"] = robustness_df["Lower Bound"].map(as_percentage)
@@ -322,6 +321,7 @@ if __name__ == "__main__":
         values=["Bounds", "Precision", "Runtime"],
         aggfunc="first",
     ).reset_index()
+    out_df[("Source Label", "")].replace(label_replace, inplace=True)
     out_df.columns = out_df.columns.reorder_levels(["Target Label", None])
     out_df = out_df[
         [("", "Network"), ("", "Source Label"), ("", "Input")]

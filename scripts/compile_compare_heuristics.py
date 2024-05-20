@@ -1,7 +1,6 @@
 #  Copyright (c) 2024. David Boetius
 #  Licensed under the MIT License
 import argparse
-import itertools
 from pathlib import Path
 
 import pandas as pd
