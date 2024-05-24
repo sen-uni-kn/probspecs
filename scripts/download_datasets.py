@@ -3,4 +3,4 @@
 from experiments.mini_acs_income import MiniACSIncome
 
 if __name__ == "__main__":
-    MiniACSIncome("../.datasets", num_variables=8, download=True)
+    MiniACSIncome(".datasets", num_variables=8, download=True)
