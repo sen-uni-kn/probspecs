@@ -1,0 +1,3 @@
+branch_selection_heuristic: random
+split_heuristic: random
+auto_lirpa_method: CROWN
