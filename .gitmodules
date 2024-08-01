@@ -5,3 +5,6 @@
 	path = fairsquare
 	url = https://github.com/cherrywoods/fairsquare.git
 
+[submodule "verifair"]
+	path = verifair
+	url = git@github.com:cherrywoods/verifair.git
