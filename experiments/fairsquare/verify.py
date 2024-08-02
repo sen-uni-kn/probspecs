@@ -8,7 +8,7 @@ from experiments.utils import log_machine_and_code_details
 from probspecs import Verifier, prob, compose, ExternalFunction, ExternalVariable
 from experiments.fairsquare.population_models import *
 from experiments.fairsquare.classifiers import *
-from probspecs.bounds import WarmStartBounds
+from probspecs.bounds import WarmStartBounds, SwitchToHeuristicsWithGuarantees
 from probspecs.utils.yaml import yaml
 
 if __name__ == "__main__":

@@ -49,6 +49,7 @@ __all__ = [
     "BaseConfigScheduler",
     "WarmStartBounds",
     "MorePreciseBoundsOnPlateau",
+    "SwitchToHeuristicsWithGuarantees",
     "SatBounds",
     "ProbabilityMass",
     "ScoreBranches",
@@ -779,6 +780,52 @@ class MorePreciseBoundsOnPlateau(ConfigContainer, BaseConfigScheduler):
         return {"cascade": [step._asdict() for step in self.cascade]}
 
 
+@yaml_object(yaml)
+class SwitchToHeuristicsWithGuarantees(ConfigContainer, BaseConfigScheduler):
+    """
+    Switches to a configuration that affords convergence guarantees
+    after a certain number of iterations.
+
+    Concretely, it sets:
+     - `branch_selection_heuristics` to `prob-mass`
+     - 'split_heuristic` to `longest-edge`
+     - `auto_lirpa_method` to `IBP`.
+
+    The purpose of this scheduler is to warm-start a configuration that
+    affords convergence guarantees with a set of heuristics that is
+    practically advantageous.
+    This maintains the convergence guarantee.
+    """
+
+    def __init__(self, switch_after: int = 100):
+        super().__init__(switch_after=switch_after)
+
+    config_keys = frozenset({"switch_after"})
+
+    def reconfigure(
+        self,
+        target: "ProbabilityBounds",
+        iteration: int,
+        prob_lb: float,
+        prob_ub: float,
+    ):
+        if iteration == self.switch_after:
+            print(
+                f"[{target.name}] Switching to Heuristics with "
+                f"Convergence Guarantees."
+            )
+            target.branch_selection_heuristic = "prob-mass"
+            target.split_heuristic = "longest-edge"
+            target.auto_lirpa_method = "IBP"
+        super().reconfigure(target, iteration, prob_lb, prob_ub)
+
+    yaml_tag = "!SwitchToHeuristicsWithGuarantees"
+
+    @property
+    def state(self):
+        return self.config
+
+
 # MARK: preprocessing
 
 
@@ -900,13 +947,16 @@ class SatBounds:
 
     class Config(typing.Protocol):
         @property
-        def auto_lirpa_method(self) -> str: ...
+        def auto_lirpa_method(self) -> str:
+            ...
 
         @property
-        def auto_lirpa_ops(self) -> dict: ...
+        def auto_lirpa_ops(self) -> dict:
+            ...
 
         @property
-        def device(self) -> torch.device: ...
+        def device(self) -> torch.device:
+            ...
 
     def __init__(
         self,
@@ -1065,9 +1115,9 @@ BRANCH_SELECTION_HEURISTIC_TYPE: Final = Literal[
     "prob-and-loose-bounds",
     "random",
 ]
-BRANCH_SELECTION_HEURISTICS: Final[tuple[BRANCH_SELECTION_HEURISTIC_TYPE, ...]] = (
-    typing.get_args(BRANCH_SELECTION_HEURISTIC_TYPE)
-)
+BRANCH_SELECTION_HEURISTICS: Final[
+    tuple[BRANCH_SELECTION_HEURISTIC_TYPE, ...]
+] = typing.get_args(BRANCH_SELECTION_HEURISTIC_TYPE)
 
 
 class ScoreBranches:
@@ -1078,13 +1128,16 @@ class ScoreBranches:
 
     class Config(typing.Protocol):
         @property
-        def branch_selection_heuristic(self) -> BRANCH_SELECTION_HEURISTIC_TYPE: ...
+        def branch_selection_heuristic(self) -> BRANCH_SELECTION_HEURISTIC_TYPE:
+            ...
 
         @property
-        def device(self) -> torch.device: ...
+        def device(self) -> torch.device:
+            ...
 
         @property
-        def random_seed(self) -> int: ...
+        def random_seed(self) -> int:
+            ...
 
     def __init__(self, config: "ScoreBranches.Config"):
         self._config = config
@@ -1252,16 +1305,20 @@ class SelectSplits:
 
     class Config(typing.Protocol):
         @property
-        def split_heuristic(self) -> SPLIT_HEURISTICS_TYPE: ...
+        def split_heuristic(self) -> SPLIT_HEURISTICS_TYPE:
+            ...
 
         @property
-        def split_heuristic_params(self) -> dict[str, typing.Any]: ...
+        def split_heuristic_params(self) -> dict[str, typing.Any]:
+            ...
 
         @property
-        def device(self) -> torch.device: ...
+        def device(self) -> torch.device:
+            ...
 
         @property
-        def random_seed(self) -> int: ...
+        def random_seed(self) -> int:
+            ...
 
     def __init__(
         self,
@@ -1589,7 +1646,9 @@ class SelectSplits:
 
         return Split.stack(splits), torch.stack(is_invalid)
 
-    def _get_branch_bounds(self, splits) -> tuple[
+    def _get_branch_bounds(
+        self, splits
+    ) -> tuple[
         dict[str, tuple[torch.Tensor, torch.Tensor]],
         dict[str, tuple[torch.Tensor, torch.Tensor]],
         int,
