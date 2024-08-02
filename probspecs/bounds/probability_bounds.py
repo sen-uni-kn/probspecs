@@ -144,6 +144,7 @@ class ProbabilityBounds(Named, ConfigContainer):
         auto_lirpa_ops: dict = frozendict(),
         config_scheduler: Optional["ProbabilityBounds.ConfigSchedule"] = None,
         device: str | torch.device | None = None,
+        random_seed: int = 0,
         log: bool = True,
     ):
         """
@@ -173,6 +174,9 @@ class ProbabilityBounds(Named, ConfigContainer):
          bounds.
         :param device: The device to compute on.
          If None, the tensors remain on the device they already reside on.
+        :param random_seed: A random seed for branching and splitting heuristics that
+         use randomness. The different heuristics add fixed constants to this seed,
+         so that the heuristics do not have the same sequence of random numbers.
         :param log: Whether to print progress messages.
         """
         # Set the default split heuristic params if not given.
@@ -190,6 +194,7 @@ class ProbabilityBounds(Named, ConfigContainer):
             auto_lirpa_ops=auto_lirpa_ops,
             config_scheduler=config_scheduler,
             device=device,
+            random_seed=random_seed,
             log=log,
         )
 
@@ -203,6 +208,7 @@ class ProbabilityBounds(Named, ConfigContainer):
             "auto_lirpa_ops",
             "config_scheduler",
             "device",
+            "random_seed",
             "log",
         }
     )
@@ -894,16 +900,13 @@ class SatBounds:
 
     class Config(typing.Protocol):
         @property
-        def auto_lirpa_method(self) -> str:
-            ...
+        def auto_lirpa_method(self) -> str: ...
 
         @property
-        def auto_lirpa_ops(self) -> dict:
-            ...
+        def auto_lirpa_ops(self) -> dict: ...
 
         @property
-        def device(self) -> torch.device:
-            ...
+        def device(self) -> torch.device: ...
 
     def __init__(
         self,
@@ -1060,10 +1063,11 @@ BRANCH_SELECTION_HEURISTIC_TYPE: Final = Literal[
     "prob-and-log-bounds",
     "prob-and-tight-bounds",
     "prob-and-loose-bounds",
+    "random",
 ]
-BRANCH_SELECTION_HEURISTICS: Final[
-    tuple[BRANCH_SELECTION_HEURISTIC_TYPE, ...]
-] = typing.get_args(BRANCH_SELECTION_HEURISTIC_TYPE)
+BRANCH_SELECTION_HEURISTICS: Final[tuple[BRANCH_SELECTION_HEURISTIC_TYPE, ...]] = (
+    typing.get_args(BRANCH_SELECTION_HEURISTIC_TYPE)
+)
 
 
 class ScoreBranches:
@@ -1074,11 +1078,20 @@ class ScoreBranches:
 
     class Config(typing.Protocol):
         @property
-        def branch_selection_heuristic(self) -> BRANCH_SELECTION_HEURISTIC_TYPE:
-            ...
+        def branch_selection_heuristic(self) -> BRANCH_SELECTION_HEURISTIC_TYPE: ...
+
+        @property
+        def device(self) -> torch.device: ...
+
+        @property
+        def random_seed(self) -> int: ...
 
     def __init__(self, config: "ScoreBranches.Config"):
         self._config = config
+
+        # For random branch scoring
+        self._rng = torch.Generator(device=config.device)
+        self._rng.manual_seed(config.random_seed + 250587974283011)
 
     def __call__(self, branches) -> torch.Tensor:
         return self.score(branches)
@@ -1099,6 +1112,8 @@ class ScoreBranches:
                 return self.score_prob_and_bounds(
                     branches, "linear", prefer_tight_bounds=False
                 )
+            case "random":
+                return self.score_random(branches)
             case _:
                 raise NotImplementedError()
 
@@ -1146,6 +1161,12 @@ class ScoreBranches:
             case _:
                 raise NotImplementedError()
         return torch.mul(prob_mass, bounds_decayed).flatten()
+
+    def score_random(self, branches: BranchStore):
+        """
+        Assign a random score to all branches.
+        """
+        return torch.rand(len(branches), generator=self._rng)
 
 
 # MARK: splitting
@@ -1231,16 +1252,16 @@ class SelectSplits:
 
     class Config(typing.Protocol):
         @property
-        def split_heuristic(self) -> SPLIT_HEURISTICS_TYPE:
-            ...
+        def split_heuristic(self) -> SPLIT_HEURISTICS_TYPE: ...
 
         @property
-        def split_heuristic_params(self) -> dict[str, typing.Any]:
-            ...
+        def split_heuristic_params(self) -> dict[str, typing.Any]: ...
 
         @property
-        def device(self) -> torch.device:
-            ...
+        def device(self) -> torch.device: ...
+
+        @property
+        def random_seed(self) -> int: ...
 
     def __init__(
         self,
@@ -1257,7 +1278,7 @@ class SelectSplits:
         # Some split heuristics resolve ties using randomness to avoid that the
         # first dimensions are split more frequently than later dimensions.
         self._rng = torch.Generator(device=config.device)
-        self._rng.manual_seed(9876543210)
+        self._rng.manual_seed(config.random_seed + 9876543210)
 
     def __call__(self, branches) -> Split:
         return self.select_splits(branches)
@@ -1568,9 +1589,7 @@ class SelectSplits:
 
         return Split.stack(splits), torch.stack(is_invalid)
 
-    def _get_branch_bounds(
-        self, splits
-    ) -> tuple[
+    def _get_branch_bounds(self, splits) -> tuple[
         dict[str, tuple[torch.Tensor, torch.Tensor]],
         dict[str, tuple[torch.Tensor, torch.Tensor]],
         int,

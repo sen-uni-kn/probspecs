@@ -46,6 +46,12 @@ if __name__ == "__main__":
         "on which configurations are available.",
     )
     parser.add_argument(
+        "--random-seed",
+        type=int,
+        default=0,
+        help="The random seed for the probability bounds heuristics that use randomness.",
+    )
+    parser.add_argument(
         "--log", action="store_true", help="Whether to print progress messages."
     )
     args = parser.parse_args()
@@ -111,7 +117,12 @@ if __name__ == "__main__":
     else:
         prob_bounds_config = Path(args.probability_bounds_config)
     prob_bounds_config = yaml.load(prob_bounds_config)
-    prob_bounds_config = {"batch_size": 512, "log": args.log} | prob_bounds_config
+
+    prob_bounds_config = {
+        "batch_size": 512,
+        "random_seed": args.random_seed,
+        "log": args.log,
+    } | prob_bounds_config
     verifier = Verifier(
         worker_devices="cpu",
         timeout=args.timeout,
