@@ -73,6 +73,7 @@ class ProbabilityDistribution(Protocol):
         raise NotImplementedError()
 
     @property
+    @abstractmethod
     def event_shape(self) -> torch.Size:
         """
         The tensor shape of the elementary events underlying this
