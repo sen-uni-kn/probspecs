@@ -44,3 +44,7 @@ dependencies = [
 [project.optional-dependencies]
 develop = ["pdm==2.19.1", "black==24.8.0"]
 all = ["probspecs[develop]"]
+
+[tool.pdm.version]
+source = "file"
+path = "probspecs/__init__.py"
