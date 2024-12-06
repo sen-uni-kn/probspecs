@@ -1,0 +1,8 @@
+branch_selection_heuristic: prob-and-log-bounds
+split_heuristic: smart-branching
+split_heuristic_params:
+  auto_lirpa_method: IBP
+  better_branch: true
+auto_lirpa_method: CROWN
+config_scheduler: !SwitchToHeuristicsWithGuarantees
+  switch_after: 100
