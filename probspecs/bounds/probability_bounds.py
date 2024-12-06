@@ -894,16 +894,13 @@ class SatBounds:
 
     class Config(typing.Protocol):
         @property
-        def auto_lirpa_method(self) -> str:
-            ...
+        def auto_lirpa_method(self) -> str: ...
 
         @property
-        def auto_lirpa_ops(self) -> dict:
-            ...
+        def auto_lirpa_ops(self) -> dict: ...
 
         @property
-        def device(self) -> torch.device:
-            ...
+        def device(self) -> torch.device: ...
 
     def __init__(
         self,
@@ -1058,12 +1055,13 @@ BRANCH_SELECTION_HEURISTIC_TYPE: Final = Literal[
     "prob-mass",
     "bounds",
     "prob-and-log-bounds",
+    "prob-and-lin-prune",
     "prob-and-tight-bounds",
     "prob-and-loose-bounds",
 ]
-BRANCH_SELECTION_HEURISTICS: Final[
-    tuple[BRANCH_SELECTION_HEURISTIC_TYPE, ...]
-] = typing.get_args(BRANCH_SELECTION_HEURISTIC_TYPE)
+BRANCH_SELECTION_HEURISTICS: Final[tuple[BRANCH_SELECTION_HEURISTIC_TYPE, ...]] = (
+    typing.get_args(BRANCH_SELECTION_HEURISTIC_TYPE)
+)
 
 
 class ScoreBranches:
@@ -1074,8 +1072,7 @@ class ScoreBranches:
 
     class Config(typing.Protocol):
         @property
-        def branch_selection_heuristic(self) -> BRANCH_SELECTION_HEURISTIC_TYPE:
-            ...
+        def branch_selection_heuristic(self) -> BRANCH_SELECTION_HEURISTIC_TYPE: ...
 
     def __init__(self, config: "ScoreBranches.Config"):
         self._config = config
@@ -1091,6 +1088,8 @@ class ScoreBranches:
                 return self.score_bounds(branches)
             case "prob-and-log-bounds":
                 return self.score_prob_and_bounds(branches, "log-decay")
+            case "prob-and-lin-prune":
+                return self.score_prob_and_prune(branches, "linear")
             case "prob-and-tight-bounds":
                 return self.score_prob_and_bounds(
                     branches, "linear", prefer_tight_bounds=True
@@ -1128,6 +1127,15 @@ class ScoreBranches:
         prob_mass = branches.probability_mass
         # we use the bounds range as an indicator for tightness.
         bounds_range = out_ubs - out_lbs
+        # For unbounded input spaces, bounds may be `nan`.
+        # Since we don't know the actual bounds, we use the mean range for these.
+        bounds_range = torch.where(
+            torch.isnan(bounds_range), torch.nanmean(bounds_range), bounds_range
+        )
+        # if all ranges are nan, bounds_range is still nan.
+        bounds_range = bounds_range.nan_to_num(
+            nan=0.0
+        )  # => falls back to prob_mass only
         match transform_bounds:
             case "log-decay":
                 # decay: normalize to [0, 1], large ranges get lower priority over probabilities
@@ -1146,6 +1154,47 @@ class ScoreBranches:
             case _:
                 raise NotImplementedError()
         return torch.mul(prob_mass, bounds_decayed).flatten()
+
+    def score_prob_and_prune(
+        self, branches: BranchStore, transform_bounds: Literal["linear"]
+    ):
+        """
+        Select branches with high probability mass and either the lower output bound
+        or the upper output bound close to zero.
+
+        The motivation for this is to greedily select the branches that will likely
+        contribute the most to the computed probability bounds in the next iteration.
+        To estimate this, we approximate the likelyhood of a branch to be pruned
+        by its lower or upper bound being close to zero.
+        By normalizing the absolute value of the bounds and multiplying the normalized
+        value with the probability mass in the branch, we obtain the desired estimate.
+        """
+        out_lbs = branches.out_lbs
+        out_ubs = branches.out_ubs
+        prob_mass = branches.probability_mass
+
+        match transform_bounds:
+            case "linear":
+                # Normalize bounds to [0, 1], where 1.0 is the largest absolute bounds
+                # and 0.0 is the actual zero.
+                # For unbounded input spaces, bounds may be `nan` or `inf`. Ignore now.
+                # We later give them the average tightness value.
+                lbs_abs_max = out_lbs.nan_to_num(0.0, 0.0, 0.0).abs().max()
+                ubs_abs_max = out_ubs.nan_to_num(0.0, 0.0, 0.0).abs().max()
+                bounds_abs_max = torch.maximum(lbs_abs_max, ubs_abs_max)
+                if torch.isclose(bounds_abs_max, 0.0):
+                    # this happens when all bounds are nan or inf
+                    # In this case, we fall back to just prob-mass
+                    bounds_score = torch.ones_like(out_lbs)
+                else:
+                    bounds_score = torch.minimum(-out_lbs, out_ubs) / bounds_abs_max
+                    # see SelectSplits -> smart_branching
+                    bounds_score = torch.round(bounds_score, decimals=4)
+                    # we prefer bounds close to zero (likely to be pruned)
+                    bounds_score = 1 - bounds_score
+            case _:
+                raise NotImplementedError()
+        return torch.mul(prob_mass, bounds_score).flatten()
 
 
 # MARK: splitting
@@ -1225,22 +1274,17 @@ class Split:
 
 
 class SelectSplits:
-    """
-    Select which dimensions to split for a batch of branches.
-    """
+    """Select which dimensions to split for a batch of branches."""
 
     class Config(typing.Protocol):
         @property
-        def split_heuristic(self) -> SPLIT_HEURISTICS_TYPE:
-            ...
+        def split_heuristic(self) -> SPLIT_HEURISTICS_TYPE: ...
 
         @property
-        def split_heuristic_params(self) -> dict[str, typing.Any]:
-            ...
+        def split_heuristic_params(self) -> dict[str, typing.Any]: ...
 
         @property
-        def device(self) -> torch.device:
-            ...
+        def device(self) -> torch.device: ...
 
     def __init__(
         self,
@@ -1322,17 +1366,20 @@ class SelectSplits:
             right_bounds, auto_lirpa_method=method
         )
 
+        # For unbounded input spaces, bounds may be `nan`. Since nan hampers with
+        # taking the maximum and minimum, we need to replace nan by a proper value.
+        # Since the selection will not depend on the bounds in this case
+        # (we always want to select an unbounded dimension), we just replace nan by 0.0.
+        left_sat_lbs = left_sat_lbs.nan_to_num()
+        left_sat_ubs = left_sat_ubs.nan_to_num()
+        right_sat_lbs = right_sat_lbs.nan_to_num()
+        right_sat_ubs = right_sat_ubs.nan_to_num()
+
         # recreate (split dims, batch) shape (individual sat bounds are scalars)
         left_sat_lbs = left_sat_lbs.reshape(num_splits, batch_size)
         left_sat_ubs = left_sat_ubs.reshape(num_splits, batch_size)
         right_sat_lbs = right_sat_lbs.reshape(num_splits, batch_size)
         right_sat_ubs = right_sat_ubs.reshape(num_splits, batch_size)
-
-        # give invalid splits maximally bad sat scores so that they aren't selected.
-        left_sat_lbs.masked_fill_(is_invalid, -torch.inf)
-        right_sat_lbs.masked_fill_(is_invalid, -torch.inf)
-        left_sat_ubs.masked_fill_(is_invalid, torch.inf)
-        right_sat_ubs.masked_fill_(is_invalid, torch.inf)
 
         if prob_weighted:
             left_prob_mass = self._prob_mass(left_bounds)
@@ -1371,6 +1418,15 @@ class SelectSplits:
         # the output due to floating point error.
         # To avoid this, we round the scores.
         select_score = torch.round(select_score, decimals=4)
+
+        # Ensure unbounded dimensions are always selected first so that we can compute
+        # sensible bounds next time
+        unbounded_dim = ~branches.in_lbs.isfinite() | ~branches.in_ubs.isfinite()
+        unbounded_dim = unbounded_dim.permute(1, 0)
+        select_score.masked_fill_(unbounded_dim, torch.inf)
+
+        # give invalid splits maximally bad sat scores so that they aren't selected.
+        select_score.masked_fill_(is_invalid, -torch.inf)
 
         # resolve ties in select_scores randomly to avoid always splitting on the
         # early dimensions when bounds are very loose
@@ -1451,18 +1507,35 @@ class SelectSplits:
         ubs_flat = branches.in_ubs
 
         def continuous_split(dim) -> tuple[Split, torch.Tensor]:
+            # Split at midpoint, unless the dimension is unbounded.
+            # If both sides are unbounded, split at 0.0.
+            # If only one side is unbounded, use twice the finite bound as splitpoint.
             midpoint = (ubs_flat[:, dim] + lbs_flat[:, dim]) / 2
+            midpoint = torch.nan_to_num(midpoint)  # this handles both sides unbounded
+
+            lbs_bounded = lbs_flat[:, dim].isfinite()
+            ubs_bounded = ubs_flat[:, dim].isfinite()
+            splitpoint = torch.where(
+                lbs_bounded ^ ubs_bounded,
+                torch.where(
+                    lbs_bounded,
+                    torch.maximum(torch.ones(()), 2 * lbs_flat[:, dim]),
+                    torch.minimum(-torch.ones(()), 2 * ubs_flat[:, dim]),
+                ),
+                midpoint,
+            )
+
             # two splits: set lower bound to midpoint
             # and set upper bound to midpoint
             left_ubs = ubs_flat.detach().clone()
             right_lbs = lbs_flat.detach().clone()
-            left_ubs[:, dim] = midpoint
-            right_lbs[:, dim] = midpoint
+            left_ubs[:, dim] = splitpoint
+            right_lbs[:, dim] = splitpoint
             split = Split(
                 left_branch=(lbs_flat, left_ubs), right_branch=(right_lbs, ubs_flat)
             )
             # The split is invalid if the bounds are already tight.
-            is_invalid = torch.eq(ubs_flat[:, dim], (lbs_flat[:, dim]))
+            is_invalid = torch.eq(ubs_flat[:, dim], lbs_flat[:, dim])
             return split, is_invalid
 
         def integer_split(dim) -> tuple[Split, torch.Tensor]:
@@ -1568,9 +1641,7 @@ class SelectSplits:
 
         return Split.stack(splits), torch.stack(is_invalid)
 
-    def _get_branch_bounds(
-        self, splits
-    ) -> tuple[
+    def _get_branch_bounds(self, splits) -> tuple[
         dict[str, tuple[torch.Tensor, torch.Tensor]],
         dict[str, tuple[torch.Tensor, torch.Tensor]],
         int,
