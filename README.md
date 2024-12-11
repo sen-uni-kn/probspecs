@@ -4,11 +4,11 @@ Probabilistic verification means mathematically proving or disproving properties
 
 ## Examples
 
-For verifying whether a neural network classifier, for example for credit approval, 
+For verifying whether a neural network classifier, for example for credit approval,
 satisfies the demographic parity fairness notion, you can use the `probspecs.Verifier` class.
 ```python
 import torch
-from probspecs import Verifier, prob, ExternalFunction, ExternalVariable 
+from probspecs import Verifier, prob, ExternalFunction, ExternalVariable
 
 # Build the probabilistic specification
 x = ExternalVariable("x")  # represents the network input
@@ -23,7 +23,7 @@ p_male = prob(credit_approved, condition=male)
 is_fair = p_non_male / p_male > 0.8
 
 verifier = Verifier(
-    worker_devices="cpu",  # or "cuda", may be faster if you have a large neural network 
+    worker_devices="cpu",  # or "cuda", may be faster if you have a large neural network
     timeout=900,  # 15 minutes
 )
 
@@ -96,30 +96,19 @@ In particular,
  - `experiments/mini_acs_income/verify.py`
 
 ## Setup
-- Install Conda or [Miniconda](https://docs.conda.io/en/latest/miniconda.html)
-- Configure the Pytorch installation by editing the `environment.yaml` file.
-  Make sure the CUDA version matches your installation or install Pytorch without
-  GPU support if your system doesn't have a GPU.
-  You can find more information on installing pytorch 
-  [here](https://pytorch.org/get-started/previous-versions/#v1121)
-- Create a new conda environment using
-  ```shell
-  export NAME=YOUR_PREFERRED_ENVIROMENT_NAME
-  conda env create -n $NAME -f environment.yaml
-  conda env config vars set PYTHONPATH="$(pwd)" -n $NAME 
-  ```
-- Install `auto_LiRPA` using
-  ```shell
-  git submodule update --init  # pull auto_LiRPA if not already present
-  conda activate $NAME
-  cd auto_LiRPA
-  pip install .
-  ```
-Now you are ready to run the experiments in this repository.
-You can also run the last two steps by running `bash -i install.sh` 
-from the root directory of this repository.
+If you have Conda or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) installed, may simply run
+```bash
+bash -i install.sh
+```
+to create a new conda environment (named `probspecs`) and install the project.
 
-## Paper 
+Otherwise, go through the following steps:
+- Create a new virtual environment.
+- Install PyTorch with the correct CUDA version or without CUDA following the instructions[here](https://pytorch.org/get-started/previous-versions/#v1121).
+- Install probspecs using `pip install .`
+Now you are ready to run the experiments in this repository.
+
+## Paper
 This repository allows you to reproduce the experiments from the paper "Probabilistic Verification of Neural Networks using Branch and Bound".
 
 ### Repository Layout
@@ -149,7 +138,7 @@ For reproducing the experiments using the FairSquare algorithm, see `fairsquare/
 For eProVe, see https://github.com/d-corsi/eProVe/.
 
 ### Compare Different Splitting and Branching Heuristics
-For recreating the experiments comparing the `SelectProb` (`prob-mass` heuristic in this repository) 
+For recreating the experiments comparing the `SelectProb` (`prob-mass` heuristic in this repository)
 and the `SelectProbLogBounds` (`prob-log-bounds` heuristic), run
 ```bash
 ./scripts/compare_heuristics.sh experiments/config/base.yaml  # this is prob-log-bounds

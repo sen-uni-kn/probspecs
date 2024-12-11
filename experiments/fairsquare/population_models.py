@@ -67,8 +67,7 @@ _classifier_input_space = TabularInputSpace(
 )
 
 
-# Here, we choose the lower and upper bounds such that the cdf of all
-# distributions is 0.0/1.0 to machine precision
+# Unbounded inputs (e.g. negative age values allowed)
 _unrealistic_classifier_input_space = TabularInputSpace(
     attributes=(
         "age",
@@ -87,11 +86,11 @@ _unrealistic_classifier_input_space = TabularInputSpace(
         "hours_per_week": AttrT.CONTINUOUS,
     },
     continuous_ranges={
-        "age": (-500.0, 200.0),
-        "education_num": (-100.0, 40.0),
-        "capital_gain": (-1000000.0, 10000.0),
-        "capital_loss": (-20000.0, 5000.0),
-        "hours_per_week": (-500.0, 200.0),
+        "age": (-torch.inf, torch.inf),
+        "education_num": (-torch.inf, torch.inf),
+        "capital_gain": (-torch.inf, torch.inf),
+        "capital_loss": (-torch.inf, torch.inf),
+        "hours_per_week": (-torch.inf, torch.inf),
     },
     integer_ranges={"sex": (0, 1)},
     categorical_values={},
@@ -159,11 +158,11 @@ _base_input_space = TabularInputSpace(
         "hours_per_week": AttrT.CONTINUOUS,
     },
     continuous_ranges={
-        "age": (-10.0, 10.0),
-        "education_num": (-10.0, 10.0),
-        "capital_gain": (-10.0, 10.0),
-        "capital_loss": (-10.0, 10.0),
-        "hours_per_week": (-10.0, 10.0),
+        "age": (-torch.inf, torch.inf),
+        "education_num": (-torch.inf, torch.inf),
+        "capital_gain": (-torch.inf, torch.inf),
+        "capital_loss": (-torch.inf, torch.inf),
+        "hours_per_week": (-torch.inf, torch.inf),
     },
     integer_ranges={"sex": (0, 1)},
     categorical_values={},

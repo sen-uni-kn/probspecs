@@ -61,7 +61,10 @@ class Uniform(ProbabilityDistribution):
         else:
             rng.manual_seed(seed)
         x = torch.rand(
-            (num_samples,) + self.event_shape, generator=rng, dtype=self.__lbs.dtype
+            (num_samples,) + self.event_shape,
+            generator=rng,
+            dtype=self.__lbs.dtype,
+            device=self.__lbs.device,
         )
         return self.__lbs + x * self.__range
 
