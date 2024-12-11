@@ -1250,12 +1250,13 @@ class ScoreBranches:
                 lbs_abs_max = out_lbs.nan_to_num(0.0, 0.0, 0.0).abs().max()
                 ubs_abs_max = out_ubs.nan_to_num(0.0, 0.0, 0.0).abs().max()
                 bounds_abs_max = torch.maximum(lbs_abs_max, ubs_abs_max)
-                if torch.isclose(bounds_abs_max, 0.0):
+                if torch.isclose(bounds_abs_max, torch.zeros(())):
                     # this happens when all bounds are nan or inf
                     # In this case, we fall back to just prob-mass
                     bounds_score = torch.ones_like(out_lbs)
                 else:
                     bounds_score = torch.minimum(-out_lbs, out_ubs) / bounds_abs_max
+                    bounds_score = torch.nan_to_num(bounds_score, 0.5, 0.5, 0.5)
                     # see SelectSplits -> smart_branching
                     bounds_score = torch.round(bounds_score, decimals=4)
                     # we prefer bounds close to zero (likely to be pruned)
