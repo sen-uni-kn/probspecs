@@ -136,10 +136,15 @@ class ProbabilityBounds(Named, ConfigContainer):
     def __init__(
         self,
         batch_size: int = 128,
-        branch_selection_heuristic: "BRANCH_SELECTION_HEURISTIC_TYPE" = "prob-and-log-bounds",
+        branch_selection_heuristic: "BRANCH_SELECTION_HEURISTIC_TYPE" = "prob",
         split_heuristic: "SPLIT_HEURISTICS_TYPE" = "smart-branching",
         split_heuristic_params: dict[
-            Literal["auto_lirpa_method", "better_branch", "normalize"], bool
+            Literal[
+                "auto_lirpa_method",
+                "better_branch",
+                "normalize",
+                "switch_heuristic_depth",
+            ],
         ] = frozendict(),
         auto_lirpa_method: str = "CROWN",
         auto_lirpa_ops: dict = frozendict(),
@@ -185,6 +190,7 @@ class ProbabilityBounds(Named, ConfigContainer):
             "auto_lirpa_method": "IBP",
             "better_branch": True,
             "normalize": True,
+            "switch_heuristic_depth": 100,
         } | dict(split_heuristic_params)
         super().__init__(
             batch_size=batch_size,
@@ -380,6 +386,7 @@ class ProbabilityBounds(Named, ConfigContainer):
             out_shape=(1,),  # a satisfaction score
             is_sat=(1,),  # trinary logic values for actual satisfaction
             probability_mass=(1,),
+            split_depth=(1,),  # how many splits were performed to get to this branch
             device=self.device,
         )
 
@@ -394,6 +401,7 @@ class ProbabilityBounds(Named, ConfigContainer):
             out_ubs=sat_ub,
             is_sat=is_sat,
             probability_mass=prob_mass,
+            split_depth=torch.tensor(0, dtype=torch.long, device=self.device),
         )
 
         # prob_lb = probability mass in all regions where sat_lb > 0, which is a
@@ -460,6 +468,8 @@ class ProbabilityBounds(Named, ConfigContainer):
             }
             sat_lbs, sat_ubs, is_sat = sat_bounds(variable_bounds)
             prob_mass = probability_mass(variable_bounds)
+            new_split_depth = selected_branches.split_depth + 1
+            new_split_depth = torch.vstack([new_split_depth, new_split_depth])
             branches.append(
                 in_lbs=new_lbs,
                 in_ubs=new_ubs,
@@ -467,6 +477,7 @@ class ProbabilityBounds(Named, ConfigContainer):
                 out_ubs=sat_ubs.unsqueeze(1),
                 is_sat=is_sat.unsqueeze(1),
                 probability_mass=prob_mass,
+                split_depth=new_split_depth,
             )
 
             iteration += 1
@@ -789,7 +800,6 @@ class SwitchToHeuristicsWithGuarantees(ConfigContainer, BaseConfigScheduler):
     Concretely, it sets:
      - `branch_selection_heuristics` to `prob-mass`
      - 'split_heuristic` to `longest-edge`
-     - `auto_lirpa_method` to `IBP`.
 
     The purpose of this scheduler is to warm-start a configuration that
     affords convergence guarantees with a set of heuristics that is
@@ -816,7 +826,6 @@ class SwitchToHeuristicsWithGuarantees(ConfigContainer, BaseConfigScheduler):
             )
             target.branch_selection_heuristic = "prob-mass"
             target.split_heuristic = "longest-edge"
-            target.auto_lirpa_method = "IBP"
         super().reconfigure(target, iteration, prob_lb, prob_ub)
 
     yaml_tag = "!SwitchToHeuristicsWithGuarantees"
@@ -1129,12 +1138,10 @@ class ScoreBranches:
         def branch_selection_heuristic(self) -> BRANCH_SELECTION_HEURISTIC_TYPE: ...
 
         @property
-        def device(self) -> torch.device:
-            ...
+        def device(self) -> torch.device: ...
 
         @property
-        def random_seed(self) -> int:
-            ...
+        def random_seed(self) -> int: ...
 
     def __init__(self, config: "ScoreBranches.Config"):
         self._config = config
@@ -1278,6 +1285,7 @@ class ScoreBranches:
 SPLIT_HEURISTICS_TYPE: Final = Literal[
     "smart-branching",
     "prob-weighted-smart-branching",
+    "smart-branching-and-longest-edge",
     "longest-edge",
     "random",
 ]
@@ -1320,11 +1328,11 @@ class Split:
 
     def map(self, fn: Callable[[torch.Tensor], torch.Tensor]) -> "Split":
         """
-        Applies a function :code:`fn` to the `mask` and `values` tensors of
-        the :class:`TensorUpdate` instances underlying this :class:`Split`.
-        :param fn: The function to apply to the underlying `mask` and `values` tensors.
-        :return: A :class:`Split` with :code:`fn` applied to the `mask` and `values`
-         tensors.
+        Applies a function :code:`fn` to the left and right branch tensors of
+        this :class:`Split`.
+
+        :param fn: The function to apply to the underlying bound tensor.
+        :return: A :class:`Split` with :code:`fn` applied to the bound tensors.
         """
         kwargs = {}
         for branch in ("left_branch", "right_branch"):
@@ -1362,8 +1370,7 @@ class SelectSplits:
         def device(self) -> torch.device: ...
 
         @property
-        def random_seed(self) -> int:
-            ...
+        def random_seed(self) -> int: ...
 
     def __init__(
         self,
@@ -1391,6 +1398,10 @@ class SelectSplits:
                 return self.smart_branching(branches)
             case "prob-weighted-smart-branching":
                 return self.smart_branching(branches, prob_weighted=True)
+            case "smart-branching-and-longest-edge":
+                return self.every_kth_split(
+                    self.smart_branching, self.split_longest_edge, branches
+                )
             case "longest-edge":
                 return self.split_longest_edge(branches)
             case "random":
@@ -1557,6 +1568,47 @@ class SelectSplits:
         branch_scores.masked_fill_(is_invalid, -torch.inf)
         split_dims = torch.argmax(branch_scores, dim=0)
         return splits.select(split_dims)
+
+    def every_kth_split(
+        self,
+        default_heristic: Callable[[BranchStore], Split],
+        kth_split_heristic: Callable[[BranchStore], Split],
+        branches: BranchStore,
+    ):
+        """
+        Applies :code:`default_heristic', except for every :code:`k`-th
+        split of a branch (for example, every 10th or 100th split),
+        where :code:`kth_split_heristic` is applied instead.
+
+        This method is used, in particular, for the `smart-branching-and-longest-edge`
+        heuristic.
+        The split depth at which `kth_split_heristic` is applied is
+        determined by the `switch_heuristic_depth` split heuristic parameter.
+
+        :param default_heristic: The default heuristic use most of the time.
+        :param kth_split_heristic: The heuristic to use for every :code:`k`-th split.
+        :return: The splits to perform.
+        """
+        k = self._config.split_heuristic_params["switch_heuristic_depth"]
+        depths = branches.split_depth
+        use_alternative = (depths % k) == k - 1
+
+        default = default_heristic(branches)
+        alternative = kth_split_heristic(branches)
+
+        left_lb = torch.where(
+            use_alternative, alternative.left_branch[0], default.left_branch[0]
+        )
+        left_ub = torch.where(
+            use_alternative, alternative.left_branch[1], default.left_branch[1]
+        )
+        right_lb = torch.where(
+            use_alternative, alternative.right_branch[0], default.right_branch[0]
+        )
+        right_ub = torch.where(
+            use_alternative, alternative.right_branch[1], default.right_branch[1]
+        )
+        return Split((left_lb, left_ub), (right_lb, right_ub))
 
     def propose_splits(self, branches: BranchStore) -> tuple[Split, torch.Tensor]:
         """
