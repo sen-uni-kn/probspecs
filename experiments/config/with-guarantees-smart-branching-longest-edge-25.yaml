@@ -1,6 +1,7 @@
 branch_selection_heuristic: prob-mass
-split_heuristic: smart-branching
+split_heuristic: smart-branching-and-longest-edge
 split_heuristic_params:
   auto_lirpa_method: IBP
   better_branch: true
+  switch_heuristic_depth: 25
 auto_lirpa_method: CROWN
