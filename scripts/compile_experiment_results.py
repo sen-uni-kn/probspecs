@@ -113,14 +113,11 @@ if __name__ == "__main__":
 
     # FairSquare
     fairsquare_df = pd.read_csv(fairsquare_subdir / "results.csv")
-    select = (fairsquare_df["Population Model"].isin(["uind", "eBN", "eBNc"]))
+    select = fairsquare_df["Population Model"].isin(["uind", "eBN", "eBNc"])
     runtime = fairsquare_df[select]["Runtime"]
     runtime = pd.to_numeric(runtime.replace("TO", 3600))
     runtime.sort_values(ascending=True, inplace=True)
-    runtime = pd.DataFrame({
-        "Nr": range(1, len(runtime) + 1),
-        "Runtime": runtime
-    })
+    runtime = pd.DataFrame({"Nr": range(1, len(runtime) + 1), "Runtime": runtime})
     out_file = experiment_directory / "FairSquareRuntime.csv"
     print("Writing", out_file)
     runtime.to_csv(out_file, header=True, index=False)
@@ -295,7 +292,6 @@ if __name__ == "__main__":
     # ACAS Xu Robustness Tables
     robustness_subdir = experiment_directory / "acasxu" / "robustness"
     robustness_df = pd.read_csv(robustness_subdir / "results.csv")
-    #
 
     runtime_summary = robustness_df[["Runtime"]].describe().transpose()
     runtime_summary.columns = [
