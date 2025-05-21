@@ -1,0 +1,742 @@
+/usr/local/lib/python3.10/dist-packages/onnx2pytorch/convert/operations.py:154: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at  ../torch/csrc/utils/tensor_numpy.cpp:178.)
+  weight = torch.from_numpy(numpy_helper.to_array(params[0]))
+/usr/local/lib/python3.10/dist-packages/onnx2pytorch/convert/model.py:151: UserWarning: Using experimental implementation that allows 'batch_size > 1'.Batchnorm layers could potentially produce false outputs.
+  warnings.warn(
+Configurations:
+
+preimage:
+  sample_dir: null
+  result_dir: result_dir
+  over_approx: false
+  under_approx: true
+  threshold: 0.9
+  label: 0
+  runner_up: 0
+  vcas_idx: 1
+  upper_time_loss: 0.5
+  patch_h: 11
+  patch_v: 11
+  patch_len: 11
+  patch_width: 11
+  patch_eps: 0.46
+  l0_norm: 24
+  sample_num: 10000
+  branch_budget: 2000
+  multi_spec: false
+  instability: true
+  patch: true
+  save_process: false
+  save_cov: false
+  quant: false
+  init_beta: false
+  worst_beta: false
+  smooth_beta: false
+  compare_split: false
+  smooth_val: true
+  atk_tp: patch
+general:
+  device: cpu
+  seed: 100
+  conv_mode: matrix
+  deterministic: false
+  double_fp: false
+  loss_reduction_func: max
+  record_bounds: false
+  sparse_alpha: true
+  save_adv_example: false
+  precompile_jit: false
+  complete_verifier: bab
+  enable_incomplete_verification: false
+  csv_name: null
+  results_file: out.txt
+  root_path: ''
+model:
+  name: null
+  path: null
+  onnx_path: model_dir/VCAS_21/VertCAS_1.onnx
+  onnx_path_prefix: ''
+  cache_onnx_conversion: false
+  onnx_quirks: null
+  input_shape: null
+  onnx_loader: default_onnx_and_vnnlib_loader
+  onnx_optimization_flags: none
+data:
+  dataset: vcas
+  num_outputs: 9
+  start: 0
+  end: 1
+  select_instance: null
+  mean: 0.0
+  std: 1.0
+  pkl_path: null
+  data_filter_path: null
+  data_idx_file: null
+specification:
+  type: bound
+  robustness_type: verified-acc
+  norm: .inf
+  epsilon: 0.07
+  vnnlib_path: null
+  vnnlib_path_prefix: ''
+solver:
+  batch_size: 50
+  min_batch_size_ratio: 1
+  use_float64_in_last_iteration: false
+  early_stop_patience: 10
+  start_save_best: 0.5
+  bound_prop_method: alpha-crown
+  prune_after_crown: false
+  crown:
+    batch_size: 1000000000
+    max_crown_size: 1000000000
+  alpha-crown:
+    alpha: true
+    lr_alpha: 0.1
+    iteration: 20
+    share_slopes: false
+    no_joint_opt: false
+    lr_decay: 0.98
+    full_conv_alpha: true
+  beta-crown:
+    lr_alpha: 0.2
+    lr_beta: 0.05
+    lr_decay: 0.98
+    optimizer: adam
+    iteration: 20
+    beta: false
+    beta_warmup: true
+    enable_opt_interm_bounds: false
+    all_node_split_LP: false
+  forward:
+    refine: false
+    dynamic: false
+    max_dim: 10000
+  multi_class:
+    multi_class_method: allclass_domain
+    label_batch_size: 32
+    skip_with_refined_bound: true
+  mip:
+    parallel_solvers: null
+    solver_threads: 1
+    refine_neuron_timeout: 15
+    refine_neuron_time_percentage: 0.8
+    early_stop: true
+    adv_warmup: true
+    mip_solver: gurobi
+bab:
+  initial_max_domains: 100
+  max_domains: .inf
+  decision_thresh: 0
+  timeout: 36000
+  timeout_scale: 1
+  override_timeout: null
+  get_upper_bound: false
+  dfs_percent: 0.0
+  pruning_in_iteration: false
+  pruning_in_iteration_ratio: 0.2
+  sort_targets: false
+  batched_domain_list: false
+  optimized_intermediate_layers: ''
+  interm_transfer: true
+  branching:
+    method: preimg
+    candidates: 3
+    reduceop: max
+    sb_coeff_thresh: 0.001
+    input_split:
+      enable: true
+      enhanced_bound_prop_method: alpha-crown
+      enhanced_branching_method: naive
+      enhanced_bound_patience: 100000000.0
+      attack_patience: 100000000.0
+      adv_check: 0
+      sort_domain_interval: -1
+  cut:
+    enabled: false
+    bab_cut: false
+    lp_cut: false
+    method: null
+    lr: 0.01
+    lr_decay: 1.0
+    iteration: 100
+    bab_iteration: -1
+    early_stop_patience: -1
+    lr_beta: 0.02
+    number_cuts: 50
+    topk_cuts_in_filter: 100
+    batch_size_primal: 100
+    max_num: 1000000000
+    patches_cut: false
+    cplex_cuts: false
+    cplex_cuts_wait: 0
+    cplex_cuts_revpickup: true
+    cut_reference_bounds: true
+    fix_intermediate_bounds: false
+  attack:
+    enabled: false
+    beam_candidates: 8
+    beam_depth: 7
+    max_dive_fix_ratio: 0.8
+    min_local_free_ratio: 0.2
+    mip_start_iteration: 5
+    mip_timeout: 30.0
+    adv_pool_threshold: null
+    refined_mip_attacker: false
+    refined_batch_size: null
+attack:
+  pgd_order: skip
+  pgd_steps: 100
+  pgd_restarts: 30
+  pgd_early_stop: true
+  pgd_lr_decay: 0.99
+  pgd_alpha: auto
+  pgd_loss_mode: null
+  enable_mip_attack: false
+  cex_path: ./test_cex.txt
+  attack_mode: PGD
+  gama_lambda: 10.0
+  gama_decay: 0.9
+  check_clean: false
+  input_split:
+    pgd_steps: 100
+    pgd_restarts: 30
+    pgd_alpha: auto
+  input_split_enhanced:
+    pgd_steps: 200
+    pgd_restarts: 5000000
+    pgd_alpha: auto
+  input_split_check_adv:
+    pgd_steps: 5
+    pgd_restarts: 5
+    pgd_alpha: auto
+debug:
+  lp_test: null
+
+Experiments at Fri Mar 28 10:21:38 2025 on c941c52f0be3
+/opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Internal results will be saved to /home/xiyue/LinInv/alpha-beta-CROWN/test_relu/Verified_ret_[VertCAS_1]_start=0_end=1_iter=20_b=50_timeout=36000_branching=preimg-max-3_lra-init=0.1_lra=0.2_lrb=0.05_PGD=skip_cplex_cuts=False_multiclass=allclass_domain.npy.
+
+ %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% idx: 0, vnnlib ID: 0 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+Total VNNLIB file length: 8, max property batch size: 100, total number of batches: 1
+
+Properties batch 0, size 8
+Remaining timeout: 35999.999541044235
+##### Instance 0 first 10 spec matrices: [[[ 1. -1.  0.  0.  0.  0.  0.  0.  0.]]
+
+ [[ 1.  0. -1.  0.  0.  0.  0.  0.  0.]]
+
+ [[ 1.  0.  0. -1.  0.  0.  0.  0.  0.]]
+
+ [[ 1.  0.  0.  0. -1.  0.  0.  0.  0.]]
+
+ [[ 1.  0.  0.  0.  0. -1.  0.  0.  0.]]
+
+ [[ 1.  0.  0.  0.  0.  0. -1.  0.  0.]]
+
+ [[ 1.  0.  0.  0.  0.  0.  0. -1.  0.]]
+
+ [[ 1.  0.  0.  0.  0.  0.  0.  0. -1.]]]
+thresholds: [0 0 0 0 0 0 0 0] ######
+Model prediction is: tensor([  1.70462918, -18.46520805,  -9.40233040,   9.16728687,  -6.60358381,
+        -22.16947746, -21.99064636, -21.69472694, -21.56797981,   1.70462918,
+        -18.46520805,  -9.40233040,   9.16728687,  -6.60358381, -22.16947746,
+        -21.99064636, -21.69472694, -21.56797981,   1.70462918, -18.46520805,
+         -9.40233040,   9.16728687,  -6.60358381, -22.16947746, -21.99064636,
+        -21.69472694, -21.56797981,   1.70462918, -18.46520805,  -9.40233040,
+          9.16728687,  -6.60358381, -22.16947746, -21.99064636, -21.69472694,
+        -21.56797981,   1.70462918, -18.46520805,  -9.40233040,   9.16728687,
+         -6.60358381, -22.16947746, -21.99064636, -21.69472694, -21.56797981,
+          1.70462918, -18.46520805,  -9.40233040,   9.16728687,  -6.60358381,
+        -22.16947746, -21.99064636, -21.69472694, -21.56797981,   1.70462918,
+        -18.46520805,  -9.40233040,   9.16728687,  -6.60358381, -22.16947746,
+        -21.99064636, -21.69472694, -21.56797981,   1.70462918, -18.46520805,
+         -9.40233040,   9.16728687,  -6.60358381, -22.16947746, -21.99064636,
+        -21.69472694, -21.56797981])
+layer /10 using sparse-features alpha with shape [12]; unstable size 12; total size 21 (torch.Size([8, 21]))
+layer /10 start_node /11 using full alpha with unstable size None total_size 1 output_shape 1
+Optimizable variables initialized.
+initial CROWN bounds: tensor([[-613.66418457],
+        [-267.83575439],
+        [-281.95935059],
+        [-267.17019653],
+        [ -52.27475357],
+        [ -52.25830841],
+        [ -56.50229263],
+        [ -58.23257446]]) None
+check fix intermediate bounds False
+Early stop at 11th iter due to 10 iterations no improvement!
+best_l after optimization: -1649.8973388671875 with beta sum per layer: []
+alpha/beta optimization time: 0.1048424243927002
+initial alpha-CROWN bounds: tensor([[-613.66418457],
+        [-267.83575439],
+        [-281.95935059],
+        [-267.17019653],
+        [ -52.27475357],
+        [ -52.25830841],
+        [ -56.50229263],
+        [ -58.23257446]])
+Worst class: (+ rhs) -613.6641845703125
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+/opt/PreimageApproxForNNs/src/test_polyhedron_util.py:1332: RuntimeWarning: overflow encountered in exp
+  return 1 / (1 + np.exp(-z))
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Label: 0, Num: 9383
+Coverage quota 0/9383:  0.000
+check fix intermediate bounds False
+best_l after optimization: -10452.7958984375 with beta sum per layer: []
+alpha/beta optimization time: 1.149402379989624
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4781)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4660)
+Pair 0, Coverage quota 0/9441:  0.000, S-reward 0.00
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4721)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4669)
+Pair 1, Coverage quota 0/9390:  0.000, S-reward 0.00
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4755)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4730)
+Pair 2, Coverage quota 0/9485:  0.000, S-reward 0.00
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4848)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4583)
+Pair 3, Coverage quota 0/9431:  0.000, S-reward 0.00
+use the longest length
+selected feature tensor(1)
+Total time: 1.1807  pickout: 0.0004  decision: 0.0009  bounding: 1.1514  add_domain: 0.0004
+length of domains: 2
+2 branch and bound domains visited
+
+--- Iteration 1, Cov quota 0.0 ---
+check fix intermediate bounds False
+best_l after optimization: -10445.2216796875 with beta sum per layer: []
+alpha/beta optimization time: 1.0802037715911865
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4628)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4829)
+Pair 0, Coverage quota 0/9457:  0.000, S-reward 0.00
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4827)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4657)
+Pair 1, Coverage quota 0/9484:  0.000, S-reward 0.00
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4744)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4733)
+Pair 2, Coverage quota 0/9477:  0.000, S-reward 0.00
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4795)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4694)
+Pair 3, Coverage quota 0/9489:  0.000, S-reward 0.00
+use the longest length
+selected feature tensor(0)
+Total time: 1.1083  pickout: 0.0002  decision: 0.0005  bounding: 1.0806  add_domain: 0.0004
+length of domains: 3
+4 branch and bound domains visited
+
+--- Iteration 2, Cov quota 0.0 ---
+check fix intermediate bounds False
+best_l after optimization: -7347.2216796875 with beta sum per layer: []
+alpha/beta optimization time: 1.0806994438171387
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4900)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4459)
+Pair 0, Coverage quota 275/9359:  0.029, S-reward 0.06
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4845)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4561)
+Pair 1, Coverage quota 0/9406:  0.000, S-reward 0.00
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4700)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4692)
+Pair 2, Coverage quota 0/9392:  0.000, S-reward 0.00
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4925)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4487)
+Pair 3, Coverage quota 0/9412:  0.000, S-reward 0.00
+use the longest length
+selected feature tensor(0)
+Total time: 1.1110  pickout: 0.0002  decision: 0.0005  bounding: 1.0811  add_domain: 0.0004
+length of domains: 4
+6 branch and bound domains visited
+
+--- Iteration 3, Cov quota 0.01461522001773119 ---
+check fix intermediate bounds False
+best_l after optimization: -996.1741943359375 with beta sum per layer: []
+alpha/beta optimization time: 1.0585670471191406
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4704)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 5000)
+Pair 0, Coverage quota 5000/9704:  0.515, S-reward 1.00
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4997)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4706)
+Pair 1, Coverage quota 2488/9703:  0.256, S-reward 0.50
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4864)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4854)
+Pair 2, Coverage quota 0/9718:  0.000, S-reward 0.00
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4859)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4878)
+Pair 3, Coverage quota 0/9737:  0.000, S-reward 0.00
+selected feature 0
+Total time: 1.0976  pickout: 0.0002  decision: 0.0005  bounding: 1.0589  add_domain: 0.0005
+length of domains: 5
+8 branch and bound domains visited
+
+--- Iteration 4, Cov quota 0.1473008245229721 ---
+check fix intermediate bounds False
+best_l after optimization: -359.3960876464844 with beta sum per layer: []
+alpha/beta optimization time: 1.0616343021392822
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 5000)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4833)
+Pair 0, Coverage quota 5518/9833:  0.561, S-reward 1.11
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4842)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 5000)
+Pair 1, Coverage quota 266/9842:  0.027, S-reward 0.06
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4914)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4923)
+Pair 2, Coverage quota 190/9837:  0.019, S-reward 0.04
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4907)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4928)
+Pair 3, Coverage quota 197/9835:  0.020, S-reward 0.04
+selected feature 0
+Total time: 1.1000  pickout: 0.0002  decision: 0.0005  bounding: 1.0620  add_domain: 0.0005
+length of domains: 6
+10 branch and bound domains visited
+
+--- Iteration 5, Cov quota 0.2814033031463623 ---
+check fix intermediate bounds False
+best_l after optimization: -2693.9609375 with beta sum per layer: []
+alpha/beta optimization time: 1.0552210807800293
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4988)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4273)
+Pair 0, Coverage quota 4988/9261:  0.539, S-reward 0.99
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4649)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4606)
+Pair 1, Coverage quota 0/9255:  0.000, S-reward 0.00
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4627)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4600)
+Pair 2, Coverage quota 0/9227:  0.000, S-reward 0.00
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4768)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4500)
+Pair 3, Coverage quota 0/9268:  0.000, S-reward 0.00
+selected feature 0
+Total time: 1.0904  pickout: 0.0002  decision: 0.0005  bounding: 1.0556  add_domain: 0.0005
+length of domains: 7
+12 branch and bound domains visited
+
+--- Iteration 6, Cov quota 0.4136175513267517 ---
+check fix intermediate bounds False
+best_l after optimization: -1614.503173828125 with beta sum per layer: []
+alpha/beta optimization time: 1.074777364730835
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4397)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4566)
+Pair 0, Coverage quota 5417/8963:  0.604, S-reward 1.14
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4821)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4141)
+Pair 1, Coverage quota 741/8962:  0.083, S-reward 0.18
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4487)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4491)
+Pair 2, Coverage quota 588/8978:  0.065, S-reward 0.13
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4931)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4018)
+Pair 3, Coverage quota 574/8949:  0.064, S-reward 0.13
+selected feature 0
+Total time: 1.1104  pickout: 0.0002  decision: 0.0005  bounding: 1.0751  add_domain: 0.0005
+length of domains: 8
+14 branch and bound domains visited
+
+--- Iteration 7, Cov quota 0.5540902018547058 ---
+check fix intermediate bounds False
+best_l after optimization: -492.35113525390625 with beta sum per layer: []
+alpha/beta optimization time: 1.0368609428405762
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4433)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 5000)
+Pair 0, Coverage quota 5000/9433:  0.530, S-reward 1.00
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4991)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4439)
+Pair 1, Coverage quota 2014/9430:  0.214, S-reward 0.40
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4714)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4708)
+Pair 2, Coverage quota 0/9422:  0.000, S-reward 0.00
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4700)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4753)
+Pair 3, Coverage quota 0/9453:  0.000, S-reward 0.00
+selected feature 0
+Total time: 1.0767  pickout: 0.0002  decision: 0.0005  bounding: 1.0372  add_domain: 0.0005
+length of domains: 9
+16 branch and bound domains visited
+
+--- Iteration 8, Cov quota 0.6200907826423645 ---
+check fix intermediate bounds False
+best_l after optimization: 439.470458984375 with beta sum per layer: []
+alpha/beta optimization time: 1.0538456439971924
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 5000)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4668)
+Pair 0, Coverage quota 8087/9668:  0.836, S-reward 1.66
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4681)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 5000)
+Pair 1, Coverage quota 4439/9681:  0.459, S-reward 0.86
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4826)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4832)
+Pair 2, Coverage quota 1667/9658:  0.173, S-reward 0.35
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4818)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4865)
+Pair 3, Coverage quota 1893/9683:  0.195, S-reward 0.40
+selected feature 0
+Total time: 1.0956  pickout: 0.0002  decision: 0.0005  bounding: 1.0542  add_domain: 0.0005
+length of domains: 10
+18 branch and bound domains visited
+
+--- Iteration 9, Cov quota 0.7134045362472534 ---
+check fix intermediate bounds False
+best_l after optimization: -1304.920166015625 with beta sum per layer: []
+alpha/beta optimization time: 1.0372703075408936
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4786)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 3723)
+Pair 0, Coverage quota 4774/8509:  0.561, S-reward 0.95
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4271)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4176)
+Pair 1, Coverage quota 0/8447:  0.000, S-reward 0.00
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4260)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4248)
+Pair 2, Coverage quota 0/8508:  0.000, S-reward 0.00
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4529)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4006)
+Pair 3, Coverage quota 0/8535:  0.000, S-reward 0.00
+selected feature 0
+Total time: 1.0702  pickout: 0.0002  decision: 0.0006  bounding: 1.0376  add_domain: 0.0005
+length of domains: 11
+20 branch and bound domains visited
+
+--- Iteration 10, Cov quota 0.7769758701324463 ---
+check fix intermediate bounds False
+Early stop at 17th iter due to 10 iterations no improvement!
+best_l after optimization: -300.0688781738281 with beta sum per layer: []
+alpha/beta optimization time: 0.9285295009613037
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4772)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4039)
+Pair 0, Coverage quota 6348/8811:  0.720, S-reward 1.40
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4679)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4157)
+Pair 1, Coverage quota 1816/8836:  0.206, S-reward 0.44
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4428)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4416)
+Pair 2, Coverage quota 1602/8844:  0.181, S-reward 0.37
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4873)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 3938)
+Pair 3, Coverage quota 1591/8811:  0.181, S-reward 0.37
+selected feature 0
+Total time: 0.9663  pickout: 0.0002  decision: 0.0005  bounding: 0.9291  add_domain: 0.0005
+length of domains: 12
+22 branch and bound domains visited
+
+--- Iteration 11, Cov quota 0.8383137583732605 ---
+check fix intermediate bounds False
+best_l after optimization: -283.96966552734375 with beta sum per layer: []
+alpha/beta optimization time: 1.0302417278289795
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 3871)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 5000)
+Pair 0, Coverage quota 3506/8871:  0.395, S-reward 0.69
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4980)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 3915)
+Pair 1, Coverage quota 3779/8895:  0.425, S-reward 0.76
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4413)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4438)
+Pair 2, Coverage quota 0/8851:  0.000, S-reward 0.00
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4437)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4485)
+Pair 3, Coverage quota 0/8922:  0.000, S-reward 0.00
+selected feature 1
+Total time: 1.0682  pickout: 0.0002  decision: 0.0005  bounding: 1.0306  add_domain: 0.0005
+length of domains: 13
+24 branch and bound domains visited
+
+--- Iteration 12, Cov quota 0.8631648421287537 ---
+check fix intermediate bounds False
+best_l after optimization: -445.3365173339844 with beta sum per layer: []
+alpha/beta optimization time: 1.0453956127166748
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4593)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 2907)
+Pair 0, Coverage quota 3119/7500:  0.416, S-reward 0.66
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4004)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 3367)
+Pair 1, Coverage quota 523/7371:  0.071, S-reward 0.15
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 3749)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 3754)
+Pair 2, Coverage quota 0/7503:  0.000, S-reward 0.00
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4023)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 3409)
+Pair 3, Coverage quota 0/7432:  0.000, S-reward 0.00
+selected feature 0
+Total time: 1.0767  pickout: 0.0002  decision: 0.0005  bounding: 1.0458  add_domain: 0.0005
+length of domains: 14
+26 branch and bound domains visited
+
+--- Iteration 13, Cov quota 0.8834928274154663 ---
+check fix intermediate bounds False
+best_l after optimization: 461.3672790527344 with beta sum per layer: []
+alpha/beta optimization time: 1.0309796333312988
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4665)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4892)
+Pair 0, Coverage quota 6977/9557:  0.730, S-reward 1.45
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4608)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4985)
+Pair 1, Coverage quota 6085/9593:  0.634, S-reward 1.19
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4791)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4780)
+Pair 2, Coverage quota 4923/9571:  0.514, S-reward 1.02
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4784)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4758)
+Pair 3, Coverage quota 5057/9542:  0.530, S-reward 1.06
+selected feature 0
+Total time: 1.0751  pickout: 0.0002  decision: 0.0005  bounding: 1.0313  add_domain: 0.0005
+length of domains: 15
+28 branch and bound domains visited
+
+--- Iteration 14, Cov quota 0.8965094089508057 ---
+check fix intermediate bounds False
+best_l after optimization: -67.81497192382812 with beta sum per layer: []
+alpha/beta optimization time: 1.0242149829864502
+Tensors transferred: alpha=0.0015M
+check model True /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx
+Loading onnx /opt/PreimageApproxForNNs/model_dir/VCAS_21/VertCAS_1.onnx wih quirks {}
+ConvertModel(
+  (MatMul_H0): Linear(in_features=4, out_features=21, bias=True)
+  (Relu_R0): ReLU()
+  (MatMul_y_out): Linear(in_features=21, out_features=9, bias=True)
+)
+Pair 0, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 2813)
+Pair 0, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 5000)
+Pair 0, Coverage quota 5613/7813:  0.718, S-reward 1.21
+Pair 1, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 4081)
+Pair 1, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 3819)
+Pair 1, Coverage quota 170/7900:  0.022, S-reward 0.06
+Pair 2, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 3923)
+Pair 2, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 3907)
+Pair 2, Coverage quota 43/7830:  0.005, S-reward 0.02
+Pair 3, subsection 0, mat shape: (8, 4), samples_eval_T shape: (4, 3845)
+Pair 3, subsection 1, mat shape: (8, 4), samples_eval_T shape: (4, 4002)
+Pair 3, Coverage quota 104/7847:  0.013, S-reward 0.04
+selected feature 0
+Total time: 1.0600  pickout: 0.0002  decision: 0.0005  bounding: 1.0246  add_domain: 0.0005
+length of domains: 16
+30 branch and bound domains visited
+
+--- Iteration 15, Cov quota 0.9150354862213135 ---
+#Subdomain: 16, 
+ Coverage: 0.915, 
+ Time cost: 16.418
+--- Preimage Generation ends ---
+result_dir
+Using result directory: /opt/PreimageApproxForNNs/result_dir
+--- Log ends ---

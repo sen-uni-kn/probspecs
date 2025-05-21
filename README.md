@@ -1,6 +1,18 @@
 # Probabilistic Verification of Neural Networks
-This repository contains the code for the paper "Probabilistic Verification of Neural Networks using Branch and Bound".
+This repository contains the code for the paper "Probabilistic Verification of Neural Networks using Branch and Bound" by David Boetius, Stefan Leue, and Tobias Sutter, to appear at ICML 2025. Read at https://arxiv.org/abs/2405.17556.
 Probabilistic verification means mathematically proving or disproving properties of the output distribution of a neural network under an input distribution.
+If you find this repository useful in your research, please cite it as
+```
+@inproceedings{probspec,
+  author       = {David Boetius and Stefan Leue and Tobias Sutter},
+  title        = {Solving Probabilistic Verification Problems of Neural Networks using Branch and Bound},
+  booktitle    = {{ICML}},
+  series       = {Proceedings of Machine Learning Research},
+  volume       = {267},
+  publisher    = {{PMLR}},
+  year         = {2025},
+}
+```
 
 ## Examples
 
@@ -119,7 +131,7 @@ This repository allows you to reproduce the experiments from the paper "Probabil
 
 ### Running the Experiments
 ```bash
-python scripts/download_dataset.py  # so that downloading doesn't hamper with hard timeouts
+python scripts/download_resources.py  # so that downloading doesn't hamper with hard timeouts
 # ./scripts/train_networks.sh  # Optional, only if you want to recreate the networks
 ./scripts/run_experiments.sh
 ```
