@@ -8,3 +8,6 @@
 [submodule "verifair"]
 	path = verifair
 	url = git@github.com:cherrywoods/verifair.git
+[submodule "PreimageApproxForNNs"]
+	path = PreimageApproxForNNs
+	url = https://github.com/sen-uni-kn/PreimageApproxForNNs.git
