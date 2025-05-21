@@ -12,6 +12,8 @@ import cpuinfo
 from GPUtil import GPUtil
 from torch import nn
 import requests
+import onnx
+from onnx2pytorch import ConvertModel
 
 from probspecs.population_models import Normalize, Denormalize
 
@@ -166,6 +168,38 @@ def load_nnet(
         input_minimums,
         input_maximums,
     )
+
+
+def get_vcas_network(
+    i: int,
+    root="resources/vcas",
+    base_url=" https://raw.githubusercontent.com/Zhang-Xiyue/PreimageApproxForNNs/2cc0dc47e447b83f1e18626272a75d5e16059f12/model_dir/",
+) -> nn.Module:
+    """
+    Load a VCAS network from the `root` directory.
+    Download the network from the PreimageApproxForNNs GitHub repository if necessary.
+    """
+    i = int(i)
+    if i < 1 or i > 9:
+        raise ValueError("The network index must be between 1 and 9")
+
+    net_file = f"VertCAS_{1}.onnx"
+    root_dir = Path(root)
+    target_file = root_dir / net_file
+    if not target_file.exists():
+        url = base_url + net_file
+        print(f"Downloading VCAS network {i} from {url}.")
+        result = requests.get(url)
+        if not result.ok:
+            raise ValueError(f"Failed to download VCAS network {i} from {url}.")
+
+        root_dir.mkdir(exist_ok=True)
+        target_file.touch()
+        with open(target_file, "wb") as file:
+            file.write(result.content)
+
+    onnx_network = onnx.load(target_file)
+    return ConvertModel(onnx_network)
 
 
 def log_machine_and_code_details():

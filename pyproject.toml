@@ -39,6 +39,7 @@ dependencies = [
     "py-cpuinfo>=9.0.0,<10.0.0",
     "GPUtil>=1.4.0,<2.0.0",
     "pytest>=7.4,<7.5",
+    "onnx2pytorch @ git+https://github.com/Verified-Intelligence/onnx2pytorch.git@8447c42c3192dad383e5598edc74dddac5706ee2"
 ]
 
 [project.optional-dependencies]

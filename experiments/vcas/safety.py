@@ -19,7 +19,7 @@ from probspecs import (
 from probspecs.distributions import Uniform, ProbabilityDistribution
 from probspecs.utils.tensor_utils import TENSOR_LIKE
 from probspecs.utils.yaml import yaml
-from experiments.utils import log_machine_and_code_details
+from experiments.utils import log_machine_and_code_details, get_vcas_network
 
 
 class VCASUniform(ProbabilityDistribution):
@@ -112,8 +112,7 @@ if __name__ == "__main__":
     print(args)
     log_machine_and_code_details()
 
-    onnx_network = onnx.load("resources/vcas/VCAS1.onnx")
-    network = ConvertModel(onnx_network)
+    network = get_vcas_network(1)
 
     input_lbs = torch.tensor([-8000.0, 0.0, -30.0, 0.0])
     input_ubs = torch.tensor([0.0, 100.0, -30.0, 40.0])
