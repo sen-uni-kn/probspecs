@@ -25,7 +25,7 @@ from .formula import (
     ExternalFunction,
     ExternalVariable,
 )
-from .trinary_logic import TrinaryLogic as TL, TrinaryLogic
+from .trinary_logic import TrinaryLogic as TL
 from .bounds.probability_bounds import ProbabilityBounds
 from .bounds.network_bounds import NetworkBounds
 from .utils.formula_utils import (
