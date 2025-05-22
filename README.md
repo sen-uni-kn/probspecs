@@ -105,6 +105,7 @@ You can find further examples in the `experiments` directory.
 In particular,
  - `experiments/acasxu/safety.py`
  - `experiments/acasxu/robustness.py`
+ - `experiments/vcas/safety.py`
  - `experiments/mini_acs_income/verify.py`
 
 ## Setup
@@ -113,6 +114,12 @@ If you have Conda or [Miniconda](https://docs.conda.io/en/latest/miniconda.html)
 bash -i install.sh
 ```
 to create a new conda environment (named `probspecs`) and install the project.
+
+You can also use the docker container
+```bash
+git submodule update --init
+docker build . -t probspecs
+```
 
 Otherwise, go through the following steps:
 - Create a new virtual environment.
@@ -130,14 +137,22 @@ This repository allows you to reproduce the experiments from the paper "Probabil
  - the `MiniACSIncome` datasets are defined in `experiments/mini_acs_income.py`. Neural networks and input distributions are contained in `resources/mini_acs_income`.
 
 ### Running the Experiments
+You can either use
 ```bash
 python scripts/download_resources.py  # so that downloading doesn't hamper with hard timeouts
 # ./scripts/train_networks.sh  # Optional, only if you want to recreate the networks
 ./scripts/run_experiments.sh
 ```
+or run the experiments in a Docker container
+```bash
+git submodule update --init
+docker build . -t probspecs
+docker run -it --rm -v $(pwd)/experiments/output:/probspecs/experiments/output probspecs
+```
 Running the experiments takes up to one day.
 The experiment script creates a new directory in `experiments/output`.
 The name of the directory is a UTC timestamp (YOUR_TIMESTAMP) for when the experiments were started.
+
 For creating tables and plots like in the paper for your run of the experiments, execute
 ```bash
 python scripts/collect_experiment_results.py experiments/output/YOUR_TIMESTAMP
