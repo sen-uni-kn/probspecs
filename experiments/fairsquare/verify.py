@@ -153,4 +153,4 @@ if __name__ == "__main__":
     end_time = time()
     print(verification_status)
     print(probability_bounds)
-    print(f"Runtime: {end_time-start_time:.4f}s")
+    print(f"Runtime: {end_time - start_time:.4f}s")

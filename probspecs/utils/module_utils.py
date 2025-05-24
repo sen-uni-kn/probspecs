@@ -3,6 +3,7 @@
 """
 Utilities for :code:`torch.nn.Module`.
 """
+
 from typing import Callable
 
 import torch

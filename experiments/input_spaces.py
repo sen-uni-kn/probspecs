@@ -1,8 +1,7 @@
 #  Copyright (c) 2023-2024. David Boetius
 #  Licensed under the MIT License
-from probspecs import TabularInputSpace
+from torchstats import TabularInputSpace
 from fairnessdatasets import Adult, SouthGerman
-from experiments.mini_acs_income import MiniACSIncome
 
 _INT = TabularInputSpace.AttributeType.INTEGER
 _CAT = TabularInputSpace.AttributeType.CATEGORICAL

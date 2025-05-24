@@ -140,7 +140,6 @@ This repository allows you to reproduce the experiments from the paper "Probabil
 You can either use
 ```bash
 python scripts/download_resources.py  # so that downloading doesn't hamper with hard timeouts
-# ./scripts/train_networks.sh  # Optional, only if you want to recreate the networks
 ./scripts/run_experiments.sh
 ```
 or run the experiments in a Docker container

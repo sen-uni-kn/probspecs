@@ -4,15 +4,15 @@ import argparse
 from time import time
 from pathlib import Path
 
+from torchstats import TensorInputSpace, Uniform
+
 from probspecs import (
     prob,
     ExternalFunction,
     ExternalVariable,
-    TensorInputSpace,
     Formula,
 )
 from probspecs.bounds import ProbabilityBounds
-from probspecs.distributions import Uniform
 from probspecs.utils.yaml import yaml
 from experiments.utils import (
     load_nnet,

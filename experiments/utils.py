@@ -239,13 +239,13 @@ def log_machine_and_code_details():
     memory_stats = psutil.virtual_memory()
     stats += (
         f"memory:\n"
-        f"  total: {memory_stats.total / (1024 ** 3):.2f} GB\n"
+        f"  total: {memory_stats.total / (1024**3):.2f} GB\n"
         f"  used: {memory_stats.percent}%\n"
     )
     swap_stats = psutil.swap_memory()
     stats += (
         f"swap:\n"
-        f"    total: {swap_stats.total / (1024 ** 3):.3f} GB\n"
+        f"    total: {swap_stats.total / (1024**3):.3f} GB\n"
         f"    used: {swap_stats.percent}%\n"
     )
     gpus = GPUtil.getGPUs()
@@ -258,6 +258,6 @@ def log_machine_and_code_details():
                 f"GPU {gpu.id}:\n"
                 f"    name: {gpu.name}\n"
                 f"    total GPU memory: {gpu.memoryTotal} MB\n"
-                f"    used GPU memory: {100*gpu.memoryUsed/gpu.memoryTotal:.1f}%\n"
+                f"    used GPU memory: {100 * gpu.memoryUsed / gpu.memoryTotal:.1f}%\n"
             )
     print(stats)

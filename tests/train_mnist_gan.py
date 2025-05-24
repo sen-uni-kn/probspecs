@@ -170,7 +170,7 @@ if __name__ == "__main__":
             if i % log_frequency == 0 or i == num_iters - 1:
                 disc_error = (disc_error_real + disc_error_fake) / 2
                 print(
-                    f"Epoch {epoch+1:3.0f}/{epochs} ({i/(num_iters-1)*100:3.0f}%), "
+                    f"Epoch {epoch + 1:3.0f}/{epochs} ({i / (num_iters - 1) * 100:3.0f}%), "
                     f"Generator Loss: {gen_error:6.4f}, "
                     f"Discriminator Loss: {disc_error:6.4f} "
                     f"({disc_error_real:6.4f}/{disc_error_fake:6.4f}) (real/fake)"

@@ -15,7 +15,7 @@ def decimals_only(f):
     if f >= 1.0:
         return "1.0"
     else:
-        return f".{f*100:02.0f}"
+        return f".{f * 100:02.0f}"
 
 
 def as_percentage(f):
@@ -24,11 +24,11 @@ def as_percentage(f):
     if f >= 1.0:
         return r" 100\%"
     else:
-        return rf"{f*100:2.1f}\%"
+        return rf"{f * 100:2.1f}\%"
 
 
 def bound_formatter(val, dollars=True):
-    formatted = rf"{val*100:6.2f}\%"
+    formatted = rf"{val * 100:6.2f}\%"
     if dollars:
         formatted = f"${formatted}$"
     return formatted
@@ -178,9 +178,9 @@ if __name__ == "__main__":
             formatters={
                 "Property": lambda p: property_lookup[p],
                 "Network": lambda n: network_name_lookup[n],
-                "Lower Bound": lambda v: rf"{v*100:6.2f}\%",
-                "Upper Bound": lambda v: rf"{v*100:6.2f}\%",
-                "Precision": lambda v: rf"{v*100:6.2f}\%",
+                "Lower Bound": lambda v: rf"{v * 100:6.2f}\%",
+                "Upper Bound": lambda v: rf"{v * 100:6.2f}\%",
+                "Precision": lambda v: rf"{v * 100:6.2f}\%",
                 "Runtime": lambda r: f"{float(r):6.1f}" if r < timeout else "    TO",
             },
         )

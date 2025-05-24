@@ -13,8 +13,8 @@ from yaml import safe_dump, safe_load
 import torch
 from torch import nn
 from torch.utils.data import random_split, DataLoader
+from miniacsincome import MiniACSIncome
 
-from experiments.mini_acs_income import MiniACSIncome
 
 if __name__ == "__main__":
     torch.manual_seed(962912072501243)
@@ -304,11 +304,11 @@ if __name__ == "__main__":
                     val_acc = accuracy(full_val_loader)
                     test_acc = accuracy(full_test_loader)
                     log_string = (
-                        f"[Epoch {epoch+1}/{num_epochs} | {i / epoch_len * 100:2.0f}%] "
+                        f"[Epoch {epoch + 1}/{num_epochs} | {i / epoch_len * 100:2.0f}%] "
                         f"batch loss: {loss:3.4f}, "
                         f"loss (train/val): {full_train_loss:3.4f}/{full_val_loss:3.4f}, "
                         f"accuracy (train/val/test): "
-                        f"{train_acc*100:4.2f}%/{val_acc*100:4.2f}%/{test_acc*100:4.2f}%"
+                        f"{train_acc * 100:4.2f}%/{val_acc * 100:4.2f}%/{test_acc * 100:4.2f}%"
                     )
                     if num_classes == 2:
                         _, _, _, _, train_precision, train_recall = confusion_matrix(
@@ -322,9 +322,9 @@ if __name__ == "__main__":
                         )
                         log_string += (
                             f", precision (train/val/test): "
-                            f"{train_precision*100:4.2f}%/{val_precision*100:4.2f}%/{test_precision*100:4.2f}%, "
+                            f"{train_precision * 100:4.2f}%/{val_precision * 100:4.2f}%/{test_precision * 100:4.2f}%, "
                             f"recall (train/val/test): "
-                            f"{train_recall*100:4.2f}%/{val_recall*100:4.2f}%/{test_recall*100:4.2f}%"
+                            f"{train_recall * 100:4.2f}%/{val_recall * 100:4.2f}%/{test_recall * 100:4.2f}%"
                         )
                     print(log_string)
 

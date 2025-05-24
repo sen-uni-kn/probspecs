@@ -14,6 +14,7 @@ We enforce these bounds also in the bayesian network population models.
 We assume that the education_num variable measures the years of education,
 based on tbe integrity constraint in https://github.com/sedrews/fairsquare/blob/bd27437a8a93ec4a239ae99edd74c69c46e9ee4b/oopsla/noqual/M_BNc_F_NN_V2_H1.fr
 """
+
 from math import sqrt
 from typing import Optional
 
@@ -21,15 +22,16 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from scipy.stats import norm, truncnorm
-
-from probspecs import TabularInputSpace, InputSpace
-from probspecs.distributions import (
+import torchstats
+from torchstats import (
+    TabularInputSpace,
+    InputSpace,
     ProbabilityDistribution,
     MultivariateIndependent,
     Categorical,
     BayesianNetwork,
 )
-from probspecs import distributions
+
 import probspecs.operations as ops
 
 AttrT = TabularInputSpace.AttributeType
@@ -115,14 +117,12 @@ class IndependentPopulationModel:
 
     @property
     def probability_distribution(self) -> ProbabilityDistribution:
-        age_distr = distributions.wrap(norm(loc=38.5816, scale=sqrt(186.0614)))
-        edu_num_distr = distributions.wrap(norm(loc=10.0806, scale=sqrt(6.6188)))
+        age_distr = torchstats.wrap(norm(loc=38.5816, scale=sqrt(186.0614)))
+        edu_num_distr = torchstats.wrap(norm(loc=10.0806, scale=sqrt(6.6188)))
         sex_distr = Categorical([0.3307, 0.6693])
-        capital_gain = distributions.wrap(
-            norm(loc=1077.6488, scale=sqrt(54542539.1784))
-        )
-        capital_loss = distributions.wrap(norm(loc=87.3038, scale=sqrt(162376.9378)))
-        hours_per_week = distributions.wrap(norm(loc=40.4374, scale=sqrt(152.4589)))
+        capital_gain = torchstats.wrap(norm(loc=1077.6488, scale=sqrt(54542539.1784)))
+        capital_loss = torchstats.wrap(norm(loc=87.3038, scale=sqrt(162376.9378)))
+        hours_per_week = torchstats.wrap(norm(loc=40.4374, scale=sqrt(152.4589)))
         return MultivariateIndependent(
             age_distr,
             edu_num_distr,
@@ -541,11 +541,11 @@ class BayesianNetworkPopulationModel:
         # 67% males in the dataset
         sex_distr = Categorical([0.3307, 0.6693])
         # distributions are rescaled by the population model.
-        age_distr = distributions.wrap(norm(loc=0.0, scale=1.0))
-        edu_num_distr = distributions.wrap(norm(loc=0.0, scale=1.0))
-        capital_gain = distributions.wrap(norm(loc=0.0, scale=1.0))
-        capital_loss = distributions.wrap(norm(loc=0.0, scale=1.0))
-        hours_per_week = distributions.wrap(norm(loc=0.0, scale=1.0))
+        age_distr = torchstats.wrap(norm(loc=0.0, scale=1.0))
+        edu_num_distr = torchstats.wrap(norm(loc=0.0, scale=1.0))
+        capital_gain = torchstats.wrap(norm(loc=0.0, scale=1.0))
+        capital_loss = torchstats.wrap(norm(loc=0.0, scale=1.0))
+        hours_per_week = torchstats.wrap(norm(loc=0.0, scale=1.0))
         return MultivariateIndependent(
             age_distr,
             edu_num_distr,
@@ -581,14 +581,14 @@ def _get_explicit_bayesian_network(realistic: bool = True):
     scale = sqrt(24248365.5428)
     a, b = (capital_gain_min - loc) / scale, (capital_gain_max - loc) / scale
     capital_gain.set_conditional_probability(
-        {sex: [0.0]}, distributions.wrap(truncnorm(a, b, loc=loc, scale=scale))
+        {sex: [0.0]}, torchstats.wrap(truncnorm(a, b, loc=loc, scale=scale))
     )
     # sex=1
     loc = 1329.3700
     scale = sqrt(69327473.1006)
     a, b = (capital_gain_min - loc) / scale, (capital_gain_max - loc) / scale
     capital_gain.set_conditional_probability(
-        {sex: [1.0]}, distributions.wrap(truncnorm(a, b, loc=loc, scale=scale))
+        {sex: [1.0]}, torchstats.wrap(truncnorm(a, b, loc=loc, scale=scale))
     )
 
     def make_node(var, case1, case2, case3, case4):
@@ -603,14 +603,14 @@ def _get_explicit_bayesian_network(realistic: bool = True):
         a, b = (min_ - loc) / scale, (max_ - loc) / scale
         node.set_conditional_probability(
             {sex: [0.0], capital_gain: ([capital_gain_min], [step_female])},
-            distributions.wrap(truncnorm(a, b, loc=loc, scale=scale)),
+            torchstats.wrap(truncnorm(a, b, loc=loc, scale=scale)),
         )
         # case2: sex=0, capital_gain >= 7298.0
         loc, scale = case2
         a, b = (min_ - loc) / scale, (max_ - loc) / scale
         node.set_conditional_probability(
             {sex: [0.0], capital_gain: ([step_female], [capital_gain_max])},
-            distributions.wrap(truncnorm(a, b, loc=loc, scale=scale)),
+            torchstats.wrap(truncnorm(a, b, loc=loc, scale=scale)),
         )
         # case3: sex=1, capital_gain < 5178.0
         step_male = 5178.0
@@ -618,14 +618,14 @@ def _get_explicit_bayesian_network(realistic: bool = True):
         a, b = (min_ - loc) / scale, (max_ - loc) / scale
         node.set_conditional_probability(
             {sex: [1.0], capital_gain: ([capital_gain_min], [step_male])},
-            distributions.wrap(truncnorm(a, b, loc=loc, scale=scale)),
+            torchstats.wrap(truncnorm(a, b, loc=loc, scale=scale)),
         )
         # case4: sex=1, capital_gain >= 5178.0
         loc, scale = case4
         a, b = (min_ - loc) / scale, (max_ - loc) / scale
         node.set_conditional_probability(
             {sex: [1.0], capital_gain: ([step_male], [capital_gain_max])},
-            distributions.wrap(truncnorm(a, b, loc=loc, scale=scale)),
+            torchstats.wrap(truncnorm(a, b, loc=loc, scale=scale)),
         )
 
     make_node(

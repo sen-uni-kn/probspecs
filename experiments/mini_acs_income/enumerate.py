@@ -6,13 +6,11 @@ from pathlib import Path
 from time import time
 
 import torch
+from miniacsincome import MiniACSIncome, get_network, get_population_model
+from torchstats import TabularInputSpace
 
-from experiments.mini_acs_income import MiniACSIncome
 from experiments.utils import log_machine_and_code_details
-from probspecs import (
-    TabularInputSpace,
-    VerifyStatus,
-)
+from probspecs import VerifyStatus
 
 
 if __name__ == "__main__":
@@ -52,13 +50,16 @@ if __name__ == "__main__":
         root=".datasets", num_variables=args.num_variables, download=True
     )
 
-    resource_dir = Path("resources/MiniACSIncome")
     input_space: TabularInputSpace
-    input_distribution, input_space, pop_model_transform = torch.load(
-        resource_dir / f"bayes_net_{args.num_variables}_var_population_model.pyt"
+    input_distribution, input_space, pop_model_transform = get_population_model(
+        args.num_variables, root=".datasets", download=True
     )
-    classifier = torch.load(
-        resource_dir / f"MiniACSIncome-{args.num_variables}_{args.network}.pyt"
+    classifier = get_network(
+        args.num_variables,
+        depth=args.depth,
+        size=args.size,
+        root=".datasets",
+        download=True,
     )
 
     var_values = {}
@@ -179,4 +180,4 @@ if __name__ == "__main__":
 
     print(verification_status)
     print(probability_bounds)
-    print(f"Runtime: {end_time-start_time:.4f}s")
+    print(f"Runtime: {end_time - start_time:.4f}s")

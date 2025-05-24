@@ -13,9 +13,8 @@ import torch
 import multiprocess as mp  # better multiprocessing using dill for serialization
 from frozendict import frozendict
 import rust_enum
+from torchstats import InputSpace, ProbabilityDistribution
 
-from .distributions.probability_distribution import ProbabilityDistribution
-from .input_space import InputSpace
 from .formula import (
     Formula,
     Inequality,

@@ -136,7 +136,7 @@ if __name__ == "__main__":
     stats_df = pd.DataFrame(stats_data)
 
     def format_float(val):
-        return rf"{val*100:3.0f}\%"
+        return rf"{val * 100:3.0f}\%"
 
     print()
     print()

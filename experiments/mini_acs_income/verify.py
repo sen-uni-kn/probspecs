@@ -1,12 +1,11 @@
 # Copyright (c) 2024 David Boetius
 # Licensed under the MIT license
 import argparse
-import os
-import sys
 from pathlib import Path
 from time import time
 
 import torch
+from miniacsincome import get_network, get_population_model
 
 from experiments.utils import log_machine_and_code_details
 from probspecs import (
@@ -29,7 +28,8 @@ if __name__ == "__main__":
         help="The number of input variables. "
         "Determines the complexity of the verification problem.",
     )
-    parser.add_argument("-n", "--network", default="network")
+    parser.add_argument("-d", "--depth", default=None)
+    parser.add_argument("-s", "--size", default=None)
     parser.add_argument("--fairness-eps", default=0.2)
     parser.add_argument(
         "--timeout",
@@ -62,12 +62,15 @@ if __name__ == "__main__":
     print(args)
     log_machine_and_code_details()
 
-    resource_dir = Path("resources/MiniACSIncome")
-    input_distribution, input_space, pop_model_transform = torch.load(
-        resource_dir / f"bayes_net_{args.num_variables}_var_population_model.pyt"
+    input_distribution, input_space, pop_model_transform = get_population_model(
+        args.num_variables, root=".datasets", download=True
     )
-    classifier = torch.load(
-        resource_dir / f"MiniACSIncome-{args.num_variables}_{args.network}.pyt"
+    classifier = get_network(
+        args.num_variables,
+        depth=args.depth,
+        size=args.size,
+        root=".datasets",
+        download=True,
     )
 
     male_i = input_space.encoding_layout["SEX"]["Male"]
@@ -141,4 +144,4 @@ if __name__ == "__main__":
     end_time = time()
     print(verification_status)
     print(probability_bounds)
-    print(f"Runtime: {end_time-start_time:.4f}s")
+    print(f"Runtime: {end_time - start_time:.4f}s")

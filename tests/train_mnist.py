@@ -54,9 +54,9 @@ if __name__ == "__main__":
                 train_acc = accuracy(train_loader)
                 test_acc = accuracy(test_loader)
                 print(
-                    f"Epoch {epoch:3.0f}/{epochs} ({i/(len(train_loader)-1)*100:3.0f}%), "
-                    f"Batch Loss: {loss:6.4f}, Batch Accuracy: {batch_acc*100:4.1f}%, "
-                    f"Train Accuracy: {train_acc*100:4.1f}%, "
-                    f"Test Accuracy: {test_acc*100:4.1f}%"
+                    f"Epoch {epoch:3.0f}/{epochs} ({i / (len(train_loader) - 1) * 100:3.0f}%), "
+                    f"Batch Loss: {loss:6.4f}, Batch Accuracy: {batch_acc * 100:4.1f}%, "
+                    f"Train Accuracy: {train_acc * 100:4.1f}%, "
+                    f"Test Accuracy: {test_acc * 100:4.1f}%"
                 )
     torch.save(net, "mnist_network.pyt")

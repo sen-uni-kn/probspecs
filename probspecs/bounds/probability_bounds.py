@@ -12,6 +12,13 @@ from frozendict import frozendict
 from torch import nn
 from auto_LiRPA import BoundedModule
 from ruamel.yaml import yaml_object
+from torchstats import ProbabilityDistribution
+from torchstats import (
+    InputSpace,
+    TensorInputSpace,
+    TabularInputSpace,
+    CombinedInputSpace,
+)
 
 from .branch_store import BranchStore
 from ..trinary_logic import TrinaryLogic
@@ -24,13 +31,6 @@ from ..formula import (
     Inequality,
     Formula,
     ElementAccess,
-)
-from ..distributions.probability_distribution import ProbabilityDistribution
-from ..input_space import (
-    InputSpace,
-    TensorInputSpace,
-    TabularInputSpace,
-    CombinedInputSpace,
 )
 from .utils import construct_bounded_tensor
 from ..utils.formula_utils import (
@@ -824,8 +824,7 @@ class SwitchToHeuristicsWithGuarantees(ConfigContainer, BaseConfigScheduler):
     ):
         if iteration == self.switch_after:
             print(
-                f"[{target.name}] Switching to Heuristics with "
-                f"Convergence Guarantees."
+                f"[{target.name}] Switching to Heuristics with Convergence Guarantees."
             )
             target.branch_selection_heuristic = "prob-mass"
             target.split_heuristic = "longest-edge"
@@ -959,16 +958,13 @@ class SatBounds:
 
     class Config(typing.Protocol):
         @property
-        def auto_lirpa_method(self) -> str:
-            ...
+        def auto_lirpa_method(self) -> str: ...
 
         @property
-        def auto_lirpa_ops(self) -> dict:
-            ...
+        def auto_lirpa_ops(self) -> dict: ...
 
         @property
-        def device(self) -> torch.device:
-            ...
+        def device(self) -> torch.device: ...
 
     def __init__(
         self,
@@ -1128,9 +1124,9 @@ BRANCH_SELECTION_HEURISTIC_TYPE: Final = Literal[
     "prob-and-loose-bounds",
     "random",
 ]
-BRANCH_SELECTION_HEURISTICS: Final[
-    tuple[BRANCH_SELECTION_HEURISTIC_TYPE, ...]
-] = typing.get_args(BRANCH_SELECTION_HEURISTIC_TYPE)
+BRANCH_SELECTION_HEURISTICS: Final[tuple[BRANCH_SELECTION_HEURISTIC_TYPE, ...]] = (
+    typing.get_args(BRANCH_SELECTION_HEURISTIC_TYPE)
+)
 
 
 class ScoreBranches:
@@ -1141,16 +1137,13 @@ class ScoreBranches:
 
     class Config(typing.Protocol):
         @property
-        def branch_selection_heuristic(self) -> BRANCH_SELECTION_HEURISTIC_TYPE:
-            ...
+        def branch_selection_heuristic(self) -> BRANCH_SELECTION_HEURISTIC_TYPE: ...
 
         @property
-        def device(self) -> torch.device:
-            ...
+        def device(self) -> torch.device: ...
 
         @property
-        def random_seed(self) -> int:
-            ...
+        def random_seed(self) -> int: ...
 
     def __init__(self, config: "ScoreBranches.Config"):
         self._config = config
@@ -1382,20 +1375,16 @@ class SelectSplits:
 
     class Config(typing.Protocol):
         @property
-        def split_heuristic(self) -> SPLIT_HEURISTICS_TYPE:
-            ...
+        def split_heuristic(self) -> SPLIT_HEURISTICS_TYPE: ...
 
         @property
-        def split_heuristic_params(self) -> dict[str, typing.Any]:
-            ...
+        def split_heuristic_params(self) -> dict[str, typing.Any]: ...
 
         @property
-        def device(self) -> torch.device:
-            ...
+        def device(self) -> torch.device: ...
 
         @property
-        def random_seed(self) -> int:
-            ...
+        def random_seed(self) -> int: ...
 
     def __init__(
         self,

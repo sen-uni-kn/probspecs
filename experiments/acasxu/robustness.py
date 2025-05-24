@@ -5,17 +5,20 @@ from time import time
 from pathlib import Path
 
 import torch
-from tqdm import tqdm
+from torchstats import (
+    TensorInputSpace,
+    Uniform,
+    PointDistribution,
+    MultivariateIndependent,
+)
 
 from probspecs import (
     prob,
     ExternalFunction,
     ExternalVariable,
-    TensorInputSpace,
     and_expr,
 )
 from probspecs.bounds import ProbabilityBounds
-from probspecs.distributions import Uniform, PointDistribution, MultivariateIndependent
 from probspecs.utils.yaml import yaml
 from experiments.utils import get_acasxu_network, log_machine_and_code_details
 
@@ -118,7 +121,7 @@ if __name__ == "__main__":
         else:
             reference_input = selected[find_ith]
         print(
-            f"New Batch: {100*len(selected)/len(batch):3.0f}% label {args.label}. Left to skip: {find_ith}."
+            f"New Batch: {100 * len(selected) / len(batch):3.0f}% label {args.label}. Left to skip: {find_ith}."
         )
 
     eps = ExternalVariable("eps")

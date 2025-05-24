@@ -7,8 +7,8 @@ import numpy as np
 import random
 from pathlib import Path
 
-from probspecs import TensorInputSpace
-from probspecs.distributions import (
+from torchstats import (
+    TensorInputSpace,
     UnivariateContinuousDistribution,
     MultivariateIndependent,
 )
@@ -184,19 +184,3 @@ def verification_test_mnist_conv_gen(resource_dir):
 @pytest.fixture
 def small_conv_mnist_net(resource_dir):
     return torch.load(resource_dir / "small_conv_mnist_network.pyt")
-
-
-def check_probabilities(distribution, event, expected_probability):
-    dtype = distribution.dtype
-    event = torch.tensor(event[0], dtype=dtype), torch.tensor(event[1], dtype=dtype)
-    expected_probability = torch.tensor(expected_probability, dtype=dtype)
-    assert torch.allclose(distribution.probability(event), expected_probability)
-
-
-def check_fit(distribution, data, expected_parameters, atol=1e-2, rtol=1e-2):
-    data = torch.tensor(data)
-    distribution.fit(data)
-    expected_parameters = torch.tensor(expected_parameters, dtype=distribution.dtype)
-    assert torch.allclose(
-        distribution.parameters, expected_parameters, atol=atol, rtol=rtol
-    )

@@ -1,10 +1,10 @@
 #  Copyright (c) 2024. David Boetius
 #  Licensed under the MIT License
-from experiments.mini_acs_income import MiniACSIncome
+import miniacsincome
 from experiments.utils import get_acasxu_network, get_vcas_network
 
 if __name__ == "__main__":
-    MiniACSIncome(".datasets", num_variables=8, download=True)
+    miniacsincome.download_all()
 
     for i0 in range(2, 6):
         for i1 in range(1, 10):

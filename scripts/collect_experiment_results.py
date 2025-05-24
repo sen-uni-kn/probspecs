@@ -128,7 +128,7 @@ def collect_bound(dir_):
             runtime_re.search(last_lines[2]) if len(last_lines) > 1 else None
         )
         if len(last_lines) < 3 or bounds_match is None or runtime_match is None:
-            print(f"Skipping incomplete log file: {dir_/log_file}.")
+            print(f"Skipping incomplete log file: {dir_ / log_file}.")
         else:
             entry["Lower Bound"] = float(bounds_match.group("lb"))
             entry["Upper Bound"] = float(bounds_match.group("ub"))

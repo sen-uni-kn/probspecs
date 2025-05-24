@@ -4,19 +4,16 @@ import argparse
 from time import time
 from pathlib import Path
 
-import onnx
-from onnx2pytorch import ConvertModel
 import torch
+from torchstats import TensorInputSpace, Uniform, ProbabilityDistribution
 
 from probspecs import (
     prob,
     Verifier,
     ExternalFunction,
     ExternalVariable,
-    TensorInputSpace,
     Formula,
 )
-from probspecs.distributions import Uniform, ProbabilityDistribution
 from probspecs.utils.tensor_utils import TENSOR_LIKE
 from probspecs.utils.yaml import yaml
 from experiments.utils import log_machine_and_code_details, get_vcas_network
@@ -169,4 +166,4 @@ if __name__ == "__main__":
     end_time = time()
     print(verification_status)
     print(probability_bounds)
-    print(f"Runtime: {end_time-start_time:.4f}s")
+    print(f"Runtime: {end_time - start_time:.4f}s")
