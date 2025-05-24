@@ -64,9 +64,9 @@ on a probability.
 These bounds are guaranteed to encode the actual value of the probability.
 ```python
 import torch
-from probspecs import prob, ExternalFunction, ExternalVariable, TensorInputSpace
+from torchstats import TensorInputSpace, Uniform
+from probspecs import prob, ExternalFunction, ExternalVariable
 from probspecs.bounds import ProbabilityBounds
-from probspecs.distributions import Uniform
 
 # Build the probability that you want to compute bounds on.
 x = ExternalVariable("x")  # the input
