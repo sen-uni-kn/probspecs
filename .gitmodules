@@ -4,10 +4,9 @@
 [submodule "fairsquare"]
 	path = fairsquare
 	url = https://github.com/cherrywoods/fairsquare.git
-
 [submodule "verifair"]
 	path = verifair
-	url = git@github.com:cherrywoods/verifair.git
+	url = https://github.com/cherrywoods/verifair.git
 [submodule "PreimageApproxForNNs"]
 	path = PreimageApproxForNNs
 	url = https://github.com/sen-uni-kn/PreimageApproxForNNs.git
