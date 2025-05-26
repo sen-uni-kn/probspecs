@@ -19,7 +19,7 @@ do
   timeout "$HARD_TIMEOUT" python -u "$HERE/verify.py" \
   --num-variables 4 \
   --timeout "$TIMEOUT" \
-  --network "size_${size}" \
+  --size "${size}" \
   "$@" \
   | tee "$OUT_DIR/4_variables_${size}_neurons.log"
 done
@@ -30,7 +30,7 @@ do
   timeout "$HARD_TIMEOUT" python -u "$HERE/verify.py" \
   --num-variables 4 \
   --timeout "$TIMEOUT" \
-  --network "depth_${depth}" \
+  --depth "${depth}" \
   "$@" \
   | tee "$OUT_DIR/4_variables_${depth}_layers.log"
 done
