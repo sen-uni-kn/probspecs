@@ -9,7 +9,7 @@ import pandas as pd
 import torch
 from torch.utils.data import random_split
 
-from experiments.mini_acs_income import MiniACSIncome
+from miniacsincome import MiniACSIncome
 
 
 if __name__ == "__main__":
