@@ -26,7 +26,8 @@ if __name__ == "__main__":
         help="The number of input variables. "
         "Determines the complexity of the verification problem.",
     )
-    parser.add_argument("-n", "--network", default="network")
+    parser.add_argument("-d", "--depth", default=None)
+    parser.add_argument("-s", "--size", default=None)
     parser.add_argument("--fairness-eps", default=0.2)
     parser.add_argument(
         "--timeout",
