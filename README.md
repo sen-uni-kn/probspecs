@@ -1,4 +1,4 @@
-![reproducibility package](https://github.com/user-attachments/assets/3610e80e-f85e-4c99-8663-062c728a2224)
+[![reproducibility package](https://github.com/user-attachments/assets/3610e80e-f85e-4c99-8663-062c728a2224)](https://doi.org/10.5281/zenodo.15521582)
 
 
 # Probabilistic Verification of Neural Networks
