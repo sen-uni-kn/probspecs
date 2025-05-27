@@ -1,18 +1,10 @@
+![reproducibility package](https://github.com/user-attachments/assets/3610e80e-f85e-4c99-8663-062c728a2224)
+
+
 # Probabilistic Verification of Neural Networks
 This repository contains the code for the paper "Probabilistic Verification of Neural Networks using Branch and Bound" by David Boetius, Stefan Leue, and Tobias Sutter, to appear at ICML 2025. Read at https://arxiv.org/abs/2405.17556.
 Probabilistic verification means mathematically proving or disproving properties of the output distribution of a neural network under an input distribution.
-If you find this repository useful in your research, please cite it as
-```
-@inproceedings{probspec,
-  author       = {David Boetius and Stefan Leue and Tobias Sutter},
-  title        = {Solving Probabilistic Verification Problems of Neural Networks using Branch and Bound},
-  booktitle    = {{ICML}},
-  series       = {Proceedings of Machine Learning Research},
-  volume       = {267},
-  publisher    = {{PMLR}},
-  year         = {2025},
-}
-```
+All raw experimental results in this paper are available at https://doi.org/10.5281/zenodo.15521582.
 
 ## Examples
 
@@ -173,4 +165,18 @@ and the `SelectProbLogBounds` (`prob-log-bounds` heuristic), run
 python scripts/collect_experiment_results.py experiments/output/TIMESTAMP_BASE
 python scripts/collect_experiment_results.py experiments/output/TIMESTAMP_PROB_MASS
 python scripts/compile_compare_heuristics.py experiments/output/TIMESTAMP_BASE experiments/output/TIMESTAMP_PROB_MASS
+```
+
+## Citation
+If you find this repository useful in your research, please cite it as
+```
+@inproceedings{probspec,
+  author       = {David Boetius and Stefan Leue and Tobias Sutter},
+  title        = {Solving Probabilistic Verification Problems of Neural Networks using Branch and Bound},
+  booktitle    = {{ICML}},
+  series       = {Proceedings of Machine Learning Research},
+  volume       = {267},
+  publisher    = {{PMLR}},
+  year         = {2025},
+}
 ```
